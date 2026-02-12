@@ -6,5 +6,5 @@ void setup() {
 }
 
 void loop() {
-// write your code her
+// write your code here
 }
