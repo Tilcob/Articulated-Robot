@@ -6,11 +6,34 @@
 #include "Kinematics.h"
 #include "Mapping.h"
 #include "Motion.h"
+#include "Trajectory.h"
 
 Servo servoBase, servoShoulder, servoElbow, servoGripper;
 MotionController motion;
 
 static unsigned long lastMs = 0;
+
+static Vec3 goalXYZ{};
+static float goalGripper01 = 0.0f;
+static bool hasGoal = false;
+
+static Trajectory traj;
+static bool trajMode = false;
+
+static bool btnWasDown = false;
+static unsigned long pressStartMs = 0;
+
+static bool nearf(float const a, float const b, float const eps) {
+  return fabsf(a - b) <= eps;
+}
+
+static bool arrived(const ServoAngles& cur, const ServoAngles& tgt) {
+  constexpr float eps = 1.0f; // degrees tolerance
+  return nearf(cur.baseDeg, tgt.baseDeg, eps) &&
+         nearf(cur.shoulderDeg, tgt.shoulderDeg, eps) &&
+         nearf(cur.elbowDeg, tgt.elbowDeg, eps) &&
+         nearf(cur.gripperDeg, tgt.gripperDeg, eps);
+}
 
 static void writeServos(const ServoAngles& a) {
   servoBase.write(static_cast<int>(a.baseDeg));
@@ -38,6 +61,11 @@ void setup() {
   writeServos(start);
 
   lastMs = millis();
+  initInputs();
+
+  goalXYZ = Vec3{L1 + L2, 0.0f, h};
+  goalGripper01 = 0.5f;
+  hasGoal = true;
 }
 
 void loop() {
@@ -49,30 +77,65 @@ void loop() {
   // 1) Inputs
   const InputState in = readInputs();
 
-  // 2) IK
-  const IKResult ik = inverseKinematics(in.target, L1, L2, h, ELBOW_UP);
+  // Long press (>700ms) -> Trajectory mode (play waypoints)
+  if (in.commitDown && !btnWasDown) {
+    btnWasDown = true;
+    pressStartMs = now;
+  }
+  if (!in.commitDown && btnWasDown) {
+    btnWasDown = false;
+    const unsigned long heldMs = now - pressStartMs;
 
-  // 3) Map -> Servo
-  const ServoAngles targetServos = mapToServos(ik.q, in.gripper01);
+    if (heldMs > 700) {
+      trajMode = true;
+      traj.reset();
+      Serial.println("TRAJ: start");
+    } else {
+      // Short press -> latch pot target
+      trajMode = false;
+      goalXYZ = in.target;
+      goalGripper01 = in.gripper01;
+      hasGoal = true;
 
-  // 4) Motion smoothing
+      Serial.print("COMMIT x="); Serial.print(goalXYZ.x, 3);
+      Serial.print(" y=");       Serial.print(goalXYZ.y, 3);
+      Serial.print(" z=");       Serial.print(goalXYZ.z, 3);
+      Serial.println();
+    }
+  }
+
+  // Choose an active target
+  Vec3 targetXYZ{};
+  float targetGrip01 = 0.5f;
+
+  if (trajMode) {
+    if (traj.finished()) {
+      trajMode = false;
+      Serial.println("TRAJ: finished");
+      return;
+    }
+    const Waypoint& wp = traj.current();
+    targetXYZ = wp.p;
+    targetGrip01 = wp.gripper01;
+  } else {
+    if (!hasGoal) return;
+    targetXYZ = goalXYZ;
+    targetGrip01 = goalGripper01;
+  }
+
+  // IK (use active target)
+  const IKResult ik = inverseKinematics(targetXYZ, L1, L2, h, ELBOW_UP);
+
+  // Map -> Servo
+  const ServoAngles targetServos = mapToServos(ik.q, targetGrip01);
+
+  // Motion smoothing
   const ServoAngles cur = motion.stepToward(targetServos, dt, MAX_SPEED_DEG_PER_S);
 
-  // 5) Output
   writeServos(cur);
 
-  // Debug (sparsam)
-  static int n=0;
-  if (++n >= 20) { // ~ alle 0.4s
-    n=0;
-    Serial.print("ok="); Serial.print(ik.ok ? "1":"0");
-    Serial.print("  x="); Serial.print(in.target.x, 3);
-    Serial.print(" y="); Serial.print(in.target.y, 3);
-    Serial.print(" z="); Serial.print(in.target.z, 3);
-    Serial.print(" | q(deg)=");
-    Serial.print(ik.q.q1 * 180.0f/PI, 1); Serial.print(",");
-    Serial.print(ik.q.q2 * 180.0f/PI, 1); Serial.print(",");
-    Serial.print(ik.q.q3 * 180.0f/PI, 1);
-    Serial.println();
+  // Advance trajectory when arrived at the current waypoint
+  if (trajMode && arrived(cur, targetServos)) {
+    traj.advanceIfArrived(true);
   }
 }

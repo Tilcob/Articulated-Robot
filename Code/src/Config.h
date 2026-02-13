@@ -13,6 +13,9 @@ static constexpr float Z_MAX = h + (L1 + L2) * 0.80f;
 
 static constexpr bool ELBOW_UP = false;
 
+// Momentary button (Taster). Wiring: pin -> button -> GND (uses INPUT_PULLUP).
+static constexpr uint8_t PIN_BTN_COMMIT = 2;
+
 
 static constexpr uint8_t PIN_POT_X = A0;
 static constexpr uint8_t PIN_POT_Y = A1;
@@ -32,8 +35,8 @@ static constexpr float SERVO_MIN_DEG = 0.0f;
 static constexpr float SERVO_MAX_DEG = 180.0f;
 
 static constexpr float BASE_ZERO_DEG     = 90.0f;
-static constexpr float SHOULDER_ZERO_DEG = 90.0f;
-static constexpr float ELBOW_ZERO_DEG    = 90.0f;
+static constexpr float SHOULDER_ZERO_DEG = 45.0f;
+static constexpr float ELBOW_ZERO_DEG    = 45.0f;
 
 static constexpr int BASE_SIGN     = +1;
 static constexpr int SHOULDER_SIGN = -1;
