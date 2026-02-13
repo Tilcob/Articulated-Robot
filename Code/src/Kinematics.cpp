@@ -21,17 +21,17 @@ Vec3 forwardKinematics(const Angles& q, float const L1, float const L2, float co
   return p;
 }
 
-IKResult inverseKinematics(const Vec3& p, float const L1, float const L2,
+IKResult inverseKinematics(const Vec3& position, float const L1, float const L2,
   float const h, bool const elbowUp) {
 
   IKResult out{};
   out.ok = true;
 
   // Base: q1
-  out.q.q1 = atan2f(-p.y, p.x);
+  out.q.q1 = atan2f(-position.y, position.x);
 
-  const float r = sqrtf(p.x * p.x + p.y * p.y);
-  const float z = p.z - h;
+  const float r = sqrtf(position.x * position.x + position.y * position.y);
+  const float z = position.z - h;
   float d = sqrtf(r*r + z*z);
 
   const float dMin = fabsf(L1 - L2);

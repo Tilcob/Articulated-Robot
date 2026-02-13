@@ -13,9 +13,9 @@ MotionController motion;
 
 static unsigned long lastMs = 0;
 
-static Vec3 goalXYZ{};
-static float goalGripper01 = 0.0f;
-static bool hasGoal = false;
+static Vec3 committedTargetPosition{};
+static float committedGripper = 0.0f;
+static bool hasCommitted = false;
 
 static Trajectory traj;
 static bool trajMode = false;
@@ -28,11 +28,11 @@ static bool nearf(float const a, float const b, float const eps) {
 }
 
 static bool arrived(const ServoAngles& cur, const ServoAngles& tgt) {
-  constexpr float eps = 1.0f; // degrees tolerance
-  return nearf(cur.baseDeg, tgt.baseDeg, eps) &&
-         nearf(cur.shoulderDeg, tgt.shoulderDeg, eps) &&
-         nearf(cur.elbowDeg, tgt.elbowDeg, eps) &&
-         nearf(cur.gripperDeg, tgt.gripperDeg, eps);
+  constexpr float degTolerance = 1.0f; // degrees tolerance
+  return nearf(cur.baseDeg, tgt.baseDeg, degTolerance) &&
+         nearf(cur.shoulderDeg, tgt.shoulderDeg, degTolerance) &&
+         nearf(cur.elbowDeg, tgt.elbowDeg, degTolerance) &&
+         nearf(cur.gripperDeg, tgt.gripperDeg, degTolerance);
 }
 
 static void writeServos(const ServoAngles& a) {
@@ -50,7 +50,6 @@ void setup() {
   servoElbow.attach(PIN_SERVO_ELBOW);
   servoGripper.attach(PIN_SERVO_GRIPPER);
 
-  // Startpose = q=0 -> Servo-Nullwerte (aus Config)
   ServoAngles start{};
   start.baseDeg     = BASE_ZERO_DEG;
   start.shoulderDeg = SHOULDER_ZERO_DEG;
@@ -63,26 +62,26 @@ void setup() {
   lastMs = millis();
   initInputs();
 
-  goalXYZ = Vec3{L1 + L2, 0.0f, h};
-  goalGripper01 = 0.5f;
-  hasGoal = true;
+  committedTargetPosition = Vec3{L1 + L2, 0.0f, h};
+  committedGripper = 0.5f;
+  hasCommitted = true;
 }
 
 void loop() {
   const unsigned long now = millis();
   const float dt = (now - lastMs) / 1000.0f;
-  if (dt < LOOP_DT_S) return; // 20ms Takt
+  if (dt < LOOP_DT_S) return;
   lastMs = now;
 
-  // 1) Inputs
-  const InputState in = readInputs();
+
+  const InputState inputState = readInputs();
 
   // Long press (>700ms) -> Trajectory mode (play waypoints)
-  if (in.commitDown && !btnWasDown) {
+  if (inputState.commitDown && !btnWasDown) {
     btnWasDown = true;
     pressStartMs = now;
   }
-  if (!in.commitDown && btnWasDown) {
+  if (!inputState.commitDown && btnWasDown) {
     btnWasDown = false;
     const unsigned long heldMs = now - pressStartMs;
 
@@ -91,22 +90,21 @@ void loop() {
       traj.reset();
       Serial.println("TRAJ: start");
     } else {
-      // Short press -> latch pot target
+      // Short press -> latch potentiometer target
       trajMode = false;
-      goalXYZ = in.target;
-      goalGripper01 = in.gripper01;
-      hasGoal = true;
+      committedTargetPosition = inputState.target;
+      committedGripper = inputState.gripper01;
+      hasCommitted = true;
 
-      Serial.print("COMMIT x="); Serial.print(goalXYZ.x, 3);
-      Serial.print(" y=");       Serial.print(goalXYZ.y, 3);
-      Serial.print(" z=");       Serial.print(goalXYZ.z, 3);
+      Serial.print("COMMIT x="); Serial.print(committedTargetPosition.x, 3);
+      Serial.print(" y=");       Serial.print(committedTargetPosition.y, 3);
+      Serial.print(" z=");       Serial.print(committedTargetPosition.z, 3);
       Serial.println();
     }
   }
 
-  // Choose an active target
-  Vec3 targetXYZ{};
-  float targetGrip01 = 0.5f;
+  Vec3 target{};
+  float targetGripper = 0.5f;
 
   if (trajMode) {
     if (traj.finished()) {
@@ -115,27 +113,21 @@ void loop() {
       return;
     }
     const Waypoint& wp = traj.current();
-    targetXYZ = wp.p;
-    targetGrip01 = wp.gripper01;
+    target = wp.targetPos;
+    targetGripper = wp.gripper;
   } else {
-    if (!hasGoal) return;
-    targetXYZ = goalXYZ;
-    targetGrip01 = goalGripper01;
+    if (!hasCommitted) return;
+    target = committedTargetPosition;
+    targetGripper = committedGripper;
   }
 
-  // IK (use active target)
-  const IKResult ik = inverseKinematics(targetXYZ, L1, L2, h, ELBOW_UP);
-
-  // Map -> Servo
-  const ServoAngles targetServos = mapToServos(ik.q, targetGrip01);
-
-  // Motion smoothing
-  const ServoAngles cur = motion.stepToward(targetServos, dt, MAX_SPEED_DEG_PER_S);
+  const IKResult result = inverseKinematics(target, L1, L2, h, ELBOW_UP);
+  const ServoAngles targetAngles = mapToServos(result.q, targetGripper);
+  const ServoAngles cur = motion.stepToward(targetAngles, dt, MAX_SPEED_DEG_PER_S);
 
   writeServos(cur);
 
-  // Advance trajectory when arrived at the current waypoint
-  if (trajMode && arrived(cur, targetServos)) {
+  if (trajMode && arrived(cur, targetAngles)) {
     traj.advanceIfArrived(true);
   }
 }
