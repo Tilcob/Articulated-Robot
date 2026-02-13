@@ -12,6 +12,10 @@ MotionController motion;
 
 static unsigned long lastMs = 0;
 
+static Vec3 goalXYZ{};
+static float goalGripper01 = 0.0f;
+static bool hasGoal = false;
+
 static void writeServos(const ServoAngles& a) {
   servoBase.write(static_cast<int>(a.baseDeg));
   servoShoulder.write(static_cast<int>(a.shoulderDeg));
@@ -38,6 +42,11 @@ void setup() {
   writeServos(start);
 
   lastMs = millis();
+  initInputs();
+
+  goalXYZ = Vec3{L1 + L2, 0.0f, h};
+  goalGripper01 = 0.5f;
+  hasGoal = true;
 }
 
 void loop() {
@@ -49,30 +58,27 @@ void loop() {
   // 1) Inputs
   const InputState in = readInputs();
 
-  // 2) IK
-  const IKResult ik = inverseKinematics(in.target, L1, L2, h, ELBOW_UP);
+  if (in.commitPressed) {
+    goalXYZ = in.target;
+    goalGripper01 = in.gripper01;
+    hasGoal = true;
 
-  // 3) Map -> Servo
-  const ServoAngles targetServos = mapToServos(ik.q, in.gripper01);
-
-  // 4) Motion smoothing
-  const ServoAngles cur = motion.stepToward(targetServos, dt, MAX_SPEED_DEG_PER_S);
-
-  // 5) Output
-  writeServos(cur);
-
-  // Debug (sparsam)
-  static int n=0;
-  if (++n >= 20) { // ~ alle 0.4s
-    n=0;
-    Serial.print("ok="); Serial.print(ik.ok ? "1":"0");
-    Serial.print("  x="); Serial.print(in.target.x, 3);
-    Serial.print(" y="); Serial.print(in.target.y, 3);
-    Serial.print(" z="); Serial.print(in.target.z, 3);
-    Serial.print(" | q(deg)=");
-    Serial.print(ik.q.q1 * 180.0f/PI, 1); Serial.print(",");
-    Serial.print(ik.q.q2 * 180.0f/PI, 1); Serial.print(",");
-    Serial.print(ik.q.q3 * 180.0f/PI, 1);
+    Serial.print("COMMIT x="); Serial.print(goalXYZ.x, 3);
+    Serial.print(" y=");       Serial.print(goalXYZ.y, 3);
+    Serial.print(" z=");       Serial.print(goalXYZ.z, 3);
     Serial.println();
   }
+
+  if (!hasGoal) return;
+
+  // IK (use latched goal, not live pot values)
+  const IKResult ik = inverseKinematics(goalXYZ, L1, L2, h, ELBOW_UP);
+
+  // Map -> Servo
+  const ServoAngles targetServos = mapToServos(ik.q, goalGripper01);
+
+  // Motion smoothing
+  const ServoAngles cur = motion.stepToward(targetServos, dt, MAX_SPEED_DEG_PER_S);
+
+  writeServos(cur);
 }

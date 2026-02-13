@@ -15,6 +15,10 @@ static float clampf(float x, float lo, float hi) {
   return x;
 }
 
+void initInputs() {
+  pinMode(PIN_BTN_COMMIT, INPUT_PULLUP);
+}
+
 InputState readInputs() {
   InputState s{};
 
@@ -29,16 +33,42 @@ InputState readInputs() {
 
   float r = sqrt(s.target.x*s.target.x + s.target.y*s.target.y);
   
-  if (r < R_MIN) {
-    float scale = (r < 1e-6f) ? 0.0f : (R_MIN / r);
+  if (r < 1e-6f) {
+    s.target.x *= R_MIN;
+    s.target.y *= .0f;
+  } else if (r < R_MIN) {
+    const float scale = R_MIN / r;
     s.target.x *= scale;
     s.target.y *= scale;
   } else if (r > R_MAX) {
-    float scale = R_MAX / r;
+    const float scale = R_MAX / r;
     s.target.x *= scale;
     s.target.y *= scale;
   }
 
   s.gripper01 = mapf(ag, ADC_MIN, ADC_MAX, 0.0f, 1.0f);
+
+  static bool lastRaw = false;
+  static bool stable = false;
+  static bool lastStable = false;
+  static unsigned long lastChangeMs = 0;
+
+  const bool raw = (digitalRead(PIN_BTN_COMMIT) == LOW);
+  const unsigned long now = millis();
+
+  if (raw != lastRaw) {
+    lastRaw = raw;
+    lastChangeMs = now;
+  }
+
+  // if input is stable for >30ms, accept it
+  if (now - lastChangeMs > 30) {
+    stable = raw;
+  }
+
+  // rising edge: not pressed -> pressed
+  s.commitPressed = (!lastStable && stable);
+  lastStable = stable;
+
   return s;
 }

@@ -4,6 +4,8 @@
 struct InputState {
   Vec3 target;
   float gripper01;
+  bool commitPressed;
 };
 
+void initInputs();
 InputState readInputs();
