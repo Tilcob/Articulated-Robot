@@ -3,7 +3,7 @@
 #include <Arduino.h>
 
 static float mapf(int v, int inMin, int inMax, float outMin, float outMax) {
-  float t = (float)(v - inMin) / (float)(inMax - inMin);
+  float t = static_cast<float>(v - inMin) / static_cast<float>(inMax - inMin);
   if (t < 0) t = 0;
   if (t > 1) t = 1;
   return outMin + t * (outMax - outMin);

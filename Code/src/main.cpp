@@ -50,7 +50,7 @@ void loop() {
   const InputState in = readInputs();
 
   // 2) IK
-  const IKResult ik = inverseKinematics(in.target, L1, L2, h, Y_IS_NEGATIVE, ELBOW_UP);
+  const IKResult ik = inverseKinematics(in.target, L1, L2, h, ELBOW_UP);
 
   // 3) Map -> Servo
   const ServoAngles targetServos = mapToServos(ik.q, in.gripper01);
