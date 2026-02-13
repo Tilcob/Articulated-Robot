@@ -1,6 +1,6 @@
 #include "Trajectory.h"
 
-// Definition of the waypoints
+// Definition of the target positions
 const Waypoint TRAJ_POINTS[] = {
     { {0.20f, 0.00f, 0.10f}, 0.5f },
     { {0.23f, 0.03f, 0.14f}, 0.5f },

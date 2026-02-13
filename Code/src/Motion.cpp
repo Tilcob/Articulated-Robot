@@ -7,8 +7,8 @@ static float moveToward(const float cur, const float tgt, const float maxStep) {
   return cur + (d > 0 ? maxStep : -maxStep);
 }
 
-void MotionController::setCurrent(const ServoAngles& a) {
-  cur = a;
+void MotionController::setCurrent(const ServoAngles& angles) {
+  cur = angles;
 }
 
 ServoAngles MotionController::stepToward(const ServoAngles& target,

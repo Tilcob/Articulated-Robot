@@ -2,15 +2,15 @@
 #include "Types.h"
 
 struct Waypoint {
-    Vec3 p;          // (m)
-    float gripper01; // 0..1
+    Vec3 targetPos;  // (m)
+    float gripper; // 0..1
 };
 
 class Trajectory {
 public:
     void reset();
     const Waypoint& current() const;
-    bool advanceIfArrived(bool arrived); // returns true if advanced
+    bool advanceIfArrived(bool arrived);
     bool finished() const;
 
 private:
