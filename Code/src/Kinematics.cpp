@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include <math.h>
 
-static float clampf(float x, float lo, float hi) {
+static float clampf(float const x, float const lo, float const hi) {
   if (x < lo) return lo;
   if (x > hi) return hi;
   return x;
@@ -11,8 +11,8 @@ static float clampf(float x, float lo, float hi) {
 //   x =  cos(q1) * (L1 cos(q2) + L2 cos(q2+q3))
 //   y = -sin(q1) * (L1 cos(q2) + L2 cos(q2+q3))
 //   z =  h + L1 sin(q2) + L2 sin(q2+q3)
-Vec3 forwardKinematics(const Angles& q, float L1, float L2, float h) {
-  float r = L1 * cosf(q.q2) + L2 * cosf(q.q2 + q.q3);
+Vec3 forwardKinematics(const Angles& q, float const L1, float const L2, float const h) {
+  float const r = L1 * cosf(q.q2) + L2 * cosf(q.q2 + q.q3);
 
   Vec3 p{};
   p.x = r * cosf(q.q1);
@@ -21,7 +21,9 @@ Vec3 forwardKinematics(const Angles& q, float L1, float L2, float h) {
   return p;
 }
 
-IKResult inverseKinematics(const Vec3& p, float L1, float L2, float h, bool elbowUp) {
+IKResult inverseKinematics(const Vec3& p, float const L1, float const L2,
+  float const h, bool const elbowUp) {
+
   IKResult out{};
   out.ok = true;
 

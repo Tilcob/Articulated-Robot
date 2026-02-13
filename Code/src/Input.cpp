@@ -2,14 +2,14 @@
 #include "Config.h"
 #include <Arduino.h>
 
-static float mapf(int v, int inMin, int inMax, float outMin, float outMax) {
+static float mapf(const int v, int inMin, int inMax, const float outMin, const float outMax) {
   float t = static_cast<float>(v - inMin) / static_cast<float>(inMax - inMin);
   if (t < 0) t = 0;
   if (t > 1) t = 1;
   return outMin + t * (outMax - outMin);
 }
 
-static float clampf(float x, float lo, float hi) {
+static float clampf(const float x, const float lo, const float hi) {
   if (x < lo) return lo;
   if (x > hi) return hi;
   return x;
@@ -22,16 +22,16 @@ void initInputs() {
 InputState readInputs() {
   InputState s{};
 
-  int ax = analogRead(PIN_POT_X);
-  int ay = analogRead(PIN_POT_Y);
-  int az = analogRead(PIN_POT_Z);
-  int ag = analogRead(PIN_POT_G);
+  const int ax = analogRead(PIN_POT_X);
+  const int ay = analogRead(PIN_POT_Y);
+  const int az = analogRead(PIN_POT_Z);
+  const int ag = analogRead(PIN_POT_G);
 
   s.target.x = mapf(ax, ADC_MIN, ADC_MAX, -R_MAX, +R_MAX);
   s.target.y = mapf(ay, ADC_MIN, ADC_MAX, -R_MAX, +R_MAX);
   s.target.z = mapf(az, ADC_MIN, ADC_MAX,  Z_MIN,  Z_MAX);
 
-  float r = sqrt(s.target.x*s.target.x + s.target.y*s.target.y);
+  const float r = sqrt(s.target.x*s.target.x + s.target.y*s.target.y);
   
   if (r < 1e-6f) {
     s.target.x *= R_MIN;
@@ -61,13 +61,12 @@ InputState readInputs() {
     lastChangeMs = now;
   }
 
-  // if input is stable for >30ms, accept it
   if (now - lastChangeMs > 30) {
     stable = raw;
   }
 
-  // rising edge: not pressed -> pressed
   s.commitPressed = (!lastStable && stable);
+  s.commitDown = stable;
   lastStable = stable;
 
   return s;

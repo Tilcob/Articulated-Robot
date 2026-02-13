@@ -8,7 +8,7 @@ const Waypoint TRAJ_POINTS[] = {
     { {0.20f, 0.00f, 0.10f}, 0.8f },
   };
 
-const int TRAJ_COUNT = (int)(sizeof(TRAJ_POINTS)/sizeof(TRAJ_POINTS[0]));
+const int TRAJ_COUNT = (sizeof(TRAJ_POINTS)/sizeof(TRAJ_POINTS[0]));
 
 void Trajectory::reset() { idx = 0; }
 
