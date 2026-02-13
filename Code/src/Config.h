@@ -3,7 +3,7 @@
 
 static constexpr float L1 = 0.120f;  // [m]
 static constexpr float L2 = 0.100f;  // [m]
-static constexpr float h  = 0.050f;  // [m]
+static constexpr float h  = 0.014f;  // [m]
 
 // Workspace limits
 static constexpr float R_MIN = 0.05f;
@@ -51,5 +51,5 @@ static constexpr float Q2_MAX = +PI/2;
 static constexpr float Q3_MIN = -PI*3/4;
 static constexpr float Q3_MAX = +PI*3/4;
 
-static constexpr float MAX_SPEED_DEG_PER_S = 90.0f;  // max speed
+static constexpr float MAX_SPEED_DEG_PER_S = 180.0f;  // max speed
 static constexpr float LOOP_DT_S = 0.02f;            // 20ms
