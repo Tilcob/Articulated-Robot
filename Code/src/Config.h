@@ -39,7 +39,7 @@ static constexpr float SHOULDER_ZERO_DEG = 45.0f;
 static constexpr float ELBOW_ZERO_DEG    = 90.0f;
 
 static constexpr int BASE_SIGN     = +1;
-static constexpr int SHOULDER_SIGN = +1;
+static constexpr int SHOULDER_SIGN = -1;
 static constexpr int ELBOW_SIGN    = +1;
 
 static constexpr float Q1_MIN = -PI/2;
