@@ -102,9 +102,9 @@ Edit `Trajectory.cpp`:
 
 ```cpp
 const Waypoint TRAJ_POINTS[] = {
-    { {0.20f, 0.00f, 0.10f}, 0.5f },
-    { {0.23f, 0.03f, 0.14f}, 0.5f },
-    { {0.25f, -0.02f, 0.12f}, 0.2f },
+    { {0.11f,  0.00f, 0.09f}, 0.5f },
+    { {0.10f,  0.03f, 0.11f}, 0.5f },
+    { {0.08f, -0.03f, 0.06f}, 0.2f }
 };
 ```
 
@@ -166,6 +166,61 @@ Advantages:
 * Always power servos from external supply.
 * Avoid commanding unreachable targets.
 * Ensure mechanical limits match software limits.
+
+---
+
+Serial Monitor: Permitted coordinates (depending on `h`, `L1`, `L2`)
+
+Entries in the Serial Monitor are **absolute target points in the base coordinate system** in **metres**:
+
+```
+x y z [g]
+```
+
+* `x, y, z` in metres
+* optional `g` as gripper value from `0.0 .. 1.0`
+
+Relative TCP commands are also possible:
+
+```
+t dx dy dz [g]
+```
+
+Here, `(dx,dy,dz)` is specified in the current TCP coordinate system and is converted internally to the base system.
+
+### Geometric conditions for valid targets
+
+With
+
+* `r = sqrt(x² + y²)`
+* `d = sqrt(r² + (z - h)²)`
+
+the following must apply:
+
+* `R_MIN <= r <= R_MAX`
+* `Z_MIN <= z <= Z_MAX`
+* `|L1 - L2| <= d <= (L1 + L2)`
+
+This is the combination of the configured cylindrical boundaries and the actual 2-link reachability.
+
+### Current figures from `Config.h`
+
+* `L1 = 0.080 m`
+* `L2 = 0.068 m`
+* `h  = 0.027 m`
+* `R_MIN = 0.050 m`
+* `R_MAX = L1 + L2 = 0.148 m`
+* `Z_MIN = h - 0.02 = 0.007 m`
+* `Z_MAX = h + 0.80*(L1+L2) = 0.1454 m`
+* Additional IK ring: `0.012 m <= d <= 0.148 m`
+
+### Examples of permitted entries
+
+* `0.10 0.00 0.08`
+* `0.09 0.03 0.11 0.6`
+* `t 0.01 0.00 -0.01`
+
+If a target is outside the workspace, the firmware reports `WS ERR` or `IK ERR`.
 
 ---
 
