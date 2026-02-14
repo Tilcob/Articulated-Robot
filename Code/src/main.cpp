@@ -23,6 +23,7 @@ static bool trajMode = false;
 
 static bool btnWasDown = false;
 static unsigned long pressStartMs = 0;
+static constexpr unsigned long LONG_PRESS_MS = 700;
 
 static Angles lastCommandQ{};
 static Vec3   lastTcpPosBase{};
@@ -68,7 +69,7 @@ static bool readSerialTcp(Vec3& outPos, float& outGrip01) {
   static uint8_t len = 0;
 
   while (Serial.available()) {
-    char c = Serial.read();
+    const char c = Serial.read();
     if (c == '\r') continue;
 
     if (c == '\n') {
@@ -207,6 +208,29 @@ void loop() {
 
   InputState inputState = readInputs();
 
+  if (inputState.commitPressed) {
+    btnWasDown = true;
+    pressStartMs = now;
+  }
+
+  if (btnWasDown && !inputState.commitDown) {
+    const unsigned long pressMs = now - pressStartMs;
+    btnWasDown = false;
+
+    if (pressMs >= LONG_PRESS_MS) {
+      traj.reset();
+      trajMode = true;
+      hasCommitted = true;
+      Serial.println("TRAJ start");
+    } else {
+      trajMode = false;
+      committedTargetPosition = inputState.target;
+      committedGripper = inputState.gripper01;
+      hasCommitted = true;
+      Serial.println("COMMIT manual target");
+    }
+  }
+
   // FIX 2: Button-Commit wirklich verwenden
   if (inputState.commitPressed) {
     trajMode = false;
@@ -232,10 +256,20 @@ void loop() {
   Vec3 target = committedTargetPosition;
   float targetGrip = committedGripper;
 
-  // optional: WS ERR nicht spammen, sondern nur beim ersten Mal bis Ziel wieder gültig ist
+  if (trajMode) {
+    if (traj.finished()) {
+      trajMode = false;
+      Serial.println("TRAJ done");
+    } else {
+      const Waypoint& wp = traj.current();
+      target = wp.targetPos;
+      targetGrip = wp.gripper;
+    }
+  }
+
   static bool wsWarned = false;
 
-  float r = sqrtf(target.x*target.x + target.y*target.y);
+  const float r = sqrtf(target.x*target.x + target.y*target.y);
   if (r < R_MIN || r > R_MAX || target.z < Z_MIN || target.z > Z_MAX) {
     if (!wsWarned) Serial.println("WS ERR");
     wsWarned = true;
@@ -275,4 +309,9 @@ void loop() {
   ServoAngles targetAngles = mapToServos(result.q, targetGrip);
   ServoAngles cur = motion.stepToward(targetAngles, dt, MAX_SPEED_DEG_PER_S);
   writeServos(cur);
+
+  if (trajMode && traj.advanceIfArrived(arrived(cur, targetAngles)) && traj.finished()) {
+    trajMode = false;
+    Serial.println("TRAJ done");
+  }
 }
