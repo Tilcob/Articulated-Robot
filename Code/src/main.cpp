@@ -172,9 +172,10 @@ void setup() {
   lastMs = millis();
   initInputs();
 
-  committedTargetPosition = Vec3{L1 + L2, 0, h};
+  // FIX 1: keinen Default commit außerhalb des Workspace setzen
+  committedTargetPosition = Vec3{(L1 + L2) * 0.8f, 0, h}; // sicher innerhalb R_MAX
   committedGripper = 0.5f;
-  hasCommitted = true;
+  hasCommitted = false; // erst fahren nach Button/Serial
 }
 
 // ------------------------------------------------------------------------
@@ -206,6 +207,15 @@ void loop() {
 
   InputState inputState = readInputs();
 
+  // FIX 2: Button-Commit wirklich verwenden
+  if (inputState.commitPressed) {
+    trajMode = false;
+    committedTargetPosition = inputState.target;
+    committedGripper = inputState.gripper01;
+    hasCommitted = true;
+    Serial.println("COMMIT (potis)");
+  }
+
   Vec3 serialPos{};
   float serialGrip = committedGripper;
 
@@ -214,6 +224,7 @@ void loop() {
     committedTargetPosition = serialPos;
     committedGripper = serialGrip;
     hasCommitted = true;
+    Serial.println("COMMIT (serial)");
   }
 
   if (!hasCommitted) return;
@@ -221,11 +232,16 @@ void loop() {
   Vec3 target = committedTargetPosition;
   float targetGrip = committedGripper;
 
+  // optional: WS ERR nicht spammen, sondern nur beim ersten Mal bis Ziel wieder gültig ist
+  static bool wsWarned = false;
+
   float r = sqrtf(target.x*target.x + target.y*target.y);
   if (r < R_MIN || r > R_MAX || target.z < Z_MIN || target.z > Z_MAX) {
-    Serial.println("WS ERR");
+    if (!wsWarned) Serial.println("WS ERR");
+    wsWarned = true;
     return;
   }
+  wsWarned = false;
 
   IKResult result = inverseKinematics(target, L1, L2, h, ELBOW_UP);
   if (!result.ok) {

@@ -42,14 +42,14 @@ static constexpr int BASE_SIGN     = +1;
 static constexpr int SHOULDER_SIGN = -1;
 static constexpr int ELBOW_SIGN    = +1;
 
-static constexpr float Q1_MIN = -PI;
-static constexpr float Q1_MAX = +PI;
+static constexpr float Q1_MIN = -PI/2;
+static constexpr float Q1_MAX = +PI/2;
 
 static constexpr float Q2_MIN = -PI/2;
 static constexpr float Q2_MAX = +PI/2;
 
-static constexpr float Q3_MIN = -PI*3/4;
-static constexpr float Q3_MAX = +PI*3/4;
+static constexpr float Q3_MIN = -PI/2;
+static constexpr float Q3_MAX = +PI/2;
 
 static constexpr float MAX_SPEED_DEG_PER_S = 180.0f;  // max speed
 static constexpr float LOOP_DT_S = 0.02f;            // 20ms
@@ -57,5 +57,5 @@ static constexpr float LOOP_DT_S = 0.02f;            // 20ms
 static constexpr bool ELBOW_SERVO_USES_FOREARM_ABS = false; // true => q2+q3, false => q3
 
 // Debug: print a warning (rate-limited) if any servo command saturates at 0..180.
-static constexpr bool ENABLE_SERVO_SAT_WARN = true;
+static constexpr bool ENABLE_SERVO_SAT_WARN = false;
 static constexpr unsigned long SERVO_SAT_WARN_PERIOD_MS = 1000;
