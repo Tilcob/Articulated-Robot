@@ -54,3 +54,27 @@ IKResult inverseKinematics(const Vec3& position, float const L1, float const L2,
 
   return out;
 }
+
+Mat3 tcpRotationBase(const Angles& q) {
+  const float c1 = cosf(q.q1), s1 = sinf(q.q1);
+  const float phi = q.q2 + q.q3;
+  const float c = cosf(phi), s = sinf(phi);
+
+  const Vec3 ex_r = { c1, -s1, 0.0f };
+  const Vec3 ey   = { s1,  c1, 0.0f };
+  constexpr Vec3 ez   = { 0.0f,0.0f,1.0f };
+
+  const Vec3 x_tcp = { c*ex_r.x + s*ez.x, c*ex_r.y + s*ez.y, c*ex_r.z + s*ez.z }; // = c*ex_r + s*ez
+  const Vec3 y_tcp = ey;
+  const Vec3 z_tcp = {
+    x_tcp.y*y_tcp.z - x_tcp.z*y_tcp.y,
+    x_tcp.z*y_tcp.x - x_tcp.x*y_tcp.z,
+    x_tcp.x*y_tcp.y - x_tcp.y*y_tcp.x
+  };
+
+  Mat3 R{};
+  R.m[0][0] = x_tcp.x; R.m[0][1] = y_tcp.x; R.m[0][2] = z_tcp.x;
+  R.m[1][0] = x_tcp.y; R.m[1][1] = y_tcp.y; R.m[1][2] = z_tcp.y;
+  R.m[2][0] = x_tcp.z; R.m[2][1] = y_tcp.z; R.m[2][2] = z_tcp.z;
+  return R;
+}

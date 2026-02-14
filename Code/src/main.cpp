@@ -24,112 +24,127 @@ static bool trajMode = false;
 static bool btnWasDown = false;
 static unsigned long pressStartMs = 0;
 
-// --- Serial TCP input -------------------------------------------------
-// Send via Serial Monitor (newline terminated):
-//   x y z            (meters)
-//   x y z g          (meters + gripper 0..1)
-// Example:
-//   0.18 -0.04 0.09
-//   0.18 -0.04 0.09 0.6
-static bool readSerialTcp(Vec3& outPos, float& outGrip01) {
-  static char buf[80];
-  static uint8_t len = 0;
+static Angles lastCommandQ{};
+static Vec3   lastTcpPosBase{};
+static Mat3   lastRBaseTcp{};
+static bool   havePose = false;
 
-  while (Serial.available() > 0) {
-    const char c = static_cast<char>(Serial.read());
+// ---- Homing ------------------------------------------------------------
+static bool homing = true;
+static ServoAngles homeServo{};
 
-    if (c == '\r') continue;
-    if (c == '\n') {
-      buf[len] = '\0';
-      len = 0;
+// ---- Debug -------------------------------------------------------------
+static bool debugPrint = false;
+static unsigned long lastDbgMs = 0;
+static constexpr unsigned long DBG_PERIOD_MS = 200;
 
-      // Allow simple commands.
-      if (buf[0] == 'h' || buf[0] == 'H') {
-        Serial.println("TCP input: send 'x y z' or 'x y z g' (meters, g=0..1). Example: 0.18 -0.04 0.09 0.6");
-        return false;
-      }
+// ------------------------------------------------------------------------
 
-      // --- Robust float parsing (AVR safe, no goto) ---
-      char* p = buf;
-      auto skipSpaces = [](char*& s) {
-        while (*s && isspace(static_cast<unsigned char>(*s))) s++;
-      };
-
-      skipSpaces(p);
-      char* end = nullptr;
-
-      const double xd = strtod(p, &end);
-      if (end == p) {
-        Serial.println("ERR: couldn't parse. Use: x y z [g]");
-        return false;
-      }
-      p = end;
-      skipSpaces(p);
-
-      const double yd = strtod(p, &end);
-      if (end == p) {
-        Serial.println("ERR: couldn't parse. Use: x y z [g]");
-        return false;
-      }
-      p = end;
-      skipSpaces(p);
-
-      const double zd = strtod(p, &end);
-      if (end == p) {
-        Serial.println("ERR: couldn't parse. Use: x y z [g]");
-        return false;
-      }
-      p = end;
-      skipSpaces(p);
-
-      // optional g
-      double gd = outGrip01;
-      if (*p != '\0') {
-        gd = strtod(p, &end);
-        if (end == p) {
-          Serial.println("ERR: couldn't parse. Use: x y z [g]");
-          return false;
-        }
-      }
-
-      outPos = Vec3{static_cast<float>(xd), static_cast<float>(yd), static_cast<float>(zd)};
-
-      auto g = static_cast<float>(gd);
-      if (g < 0.0f) g = 0.0f;
-      if (g > 1.0f) g = 1.0f;
-      outGrip01 = g;
-
-      return true;
-    }
-
-    if (len < sizeof(buf) - 1) {
-      buf[len++] = c;
-    } else {
-      // Overflow: reset.
-      len = 0;
-    }
-  }
-  return false;
-}
-
-static bool nearf(float const a, float const b, float const eps) {
+static bool nearf(float a, float b, float eps) {
   return fabsf(a - b) <= eps;
 }
 
 static bool arrived(const ServoAngles& cur, const ServoAngles& tgt) {
-  constexpr float degTolerance = 1.0f; // degrees tolerance
-  return nearf(cur.baseDeg, tgt.baseDeg, degTolerance) &&
-         nearf(cur.shoulderDeg, tgt.shoulderDeg, degTolerance) &&
-         nearf(cur.elbowDeg, tgt.elbowDeg, degTolerance) &&
-         nearf(cur.gripperDeg, tgt.gripperDeg, degTolerance);
+  constexpr float tol = 1.0f;
+  return nearf(cur.baseDeg, tgt.baseDeg, tol) &&
+         nearf(cur.shoulderDeg, tgt.shoulderDeg, tol) &&
+         nearf(cur.elbowDeg, tgt.elbowDeg, tol) &&
+         nearf(cur.gripperDeg, tgt.gripperDeg, tol);
 }
 
 static void writeServos(const ServoAngles& a) {
-  servoBase.write(static_cast<int>(a.baseDeg));
-  servoShoulder.write(static_cast<int>(a.shoulderDeg));
-  servoElbow.write(static_cast<int>(a.elbowDeg));
-  servoGripper.write(static_cast<int>(a.gripperDeg));
+  servoBase.write((int)a.baseDeg);
+  servoShoulder.write((int)a.shoulderDeg);
+  servoElbow.write((int)a.elbowDeg);
+  servoGripper.write((int)a.gripperDeg);
 }
+
+// ------------------------------------------------------------------------
+// SERIAL INPUT
+// ------------------------------------------------------------------------
+
+static bool readSerialTcp(Vec3& outPos, float& outGrip01) {
+  static char buf[80];
+  static uint8_t len = 0;
+
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '\r') continue;
+
+    if (c == '\n') {
+      buf[len] = '\0';
+      len = 0;
+
+      char* p = buf;
+      while (*p && isspace((unsigned char)*p)) p++;
+
+      // ---- Commands ----------------------------------------------------
+      if (*p == 'h' || *p == 'H') {
+        Serial.println("Commands:");
+        Serial.println("  x y z [g]      -> absolute Base-KS");
+        Serial.println("  t dx dy dz [g] -> relative TCP-KS");
+        Serial.println("  d              -> toggle debug");
+        return false;
+      }
+
+      if (*p == 'd' || *p == 'D') {
+        debugPrint = !debugPrint;
+        Serial.print("DEBUG: ");
+        Serial.println(debugPrint ? "ON" : "OFF");
+        return false;
+      }
+
+      bool tcpRelative = false;
+      if (*p == 't' || *p == 'T') {
+        tcpRelative = true;
+        p++;
+        while (*p && isspace((unsigned char)*p)) p++;
+      }
+
+      char* end;
+      double xd = strtod(p, &end);
+      if (end == p) return false;
+      p = end;
+
+      double yd = strtod(p, &end);
+      if (end == p) return false;
+      p = end;
+
+      double zd = strtod(p, &end);
+      if (end == p) return false;
+      p = end;
+
+      double gd = outGrip01;
+      if (*p != '\0')
+        gd = strtod(p, &end);
+
+      Vec3 parsed{(float)xd,(float)yd,(float)zd};
+      float g = constrain((float)gd,0.0f,1.0f);
+      outGrip01 = g;
+
+      if (tcpRelative) {
+        if (!havePose) {
+          Serial.println("ERR: no pose yet");
+          return false;
+        }
+        Vec3 d_base = mul(lastRBaseTcp, parsed);
+        outPos = add(lastTcpPosBase, d_base);
+      } else {
+        outPos = parsed;
+      }
+
+      return true;
+    }
+
+    if (len < sizeof(buf)-1)
+      buf[len++] = c;
+    else
+      len = 0;
+  }
+  return false;
+}
+
+// ------------------------------------------------------------------------
 
 void setup() {
   Serial.begin(115200);
@@ -143,96 +158,105 @@ void setup() {
   start.baseDeg     = BASE_ZERO_DEG;
   start.shoulderDeg = SHOULDER_ZERO_DEG;
   start.elbowDeg    = ELBOW_ZERO_DEG;
-  start.gripperDeg  = 60.0f;
+  start.gripperDeg  = 60;
 
   motion.setCurrent(start);
   writeServos(start);
 
+  constexpr Angles homeQ{0,0,0};
+  homeServo = mapToServos(homeQ, 0.5f);
+  homing = true;
+
+  Serial.println("HOMING: moving to q=(0,0,0)");
+
   lastMs = millis();
   initInputs();
 
-  committedTargetPosition = Vec3{L1 + L2, 0.0f, h};
+  committedTargetPosition = Vec3{L1 + L2, 0, h};
   committedGripper = 0.5f;
   hasCommitted = true;
-  Serial.println("Ready. Potis + short press = commit. Long press = trajectory. Serial TCP: send 'x y z' or 'x y z g'. Type 'h' for help.");
 }
 
+// ------------------------------------------------------------------------
+
 void loop() {
-  const unsigned long now = millis();
-  const float dt = (now - lastMs) / 1000.0f;
+
+  unsigned long now = millis();
+  float dt = (now - lastMs)/1000.0f;
   if (dt < LOOP_DT_S) return;
   lastMs = now;
 
+  // ---- Homing ----------------------------------------------------------
+  if (homing) {
+    ServoAngles cur = motion.stepToward(homeServo, dt, MAX_SPEED_DEG_PER_S);
+    writeServos(cur);
 
-  const InputState inputState = readInputs();
+    if (arrived(cur, homeServo)) {
+      homing = false;
+
+      lastCommandQ = Angles{0,0,0};
+      lastTcpPosBase = forwardKinematics(lastCommandQ, L1, L2, h);
+      lastRBaseTcp = tcpRotationBase(lastCommandQ);
+      havePose = true;
+
+      Serial.println("HOMING done.");
+    }
+    return;
+  }
+
+  InputState inputState = readInputs();
 
   Vec3 serialPos{};
   float serialGrip = committedGripper;
+
   if (readSerialTcp(serialPos, serialGrip)) {
     trajMode = false;
     committedTargetPosition = serialPos;
     committedGripper = serialGrip;
     hasCommitted = true;
-
-    Serial.print("SERIAL COMMIT x="); Serial.print(committedTargetPosition.x, 3);
-    Serial.print(" y=");            Serial.print(committedTargetPosition.y, 3);
-    Serial.print(" z=");            Serial.print(committedTargetPosition.z, 3);
-    Serial.print(" g=");            Serial.print(committedGripper, 2);
-    Serial.println();
   }
 
-  // Long press (>700ms) -> Trajectory mode (play waypoints)
-  if (inputState.commitDown && !btnWasDown) {
-    btnWasDown = true;
-    pressStartMs = now;
+  if (!hasCommitted) return;
+
+  Vec3 target = committedTargetPosition;
+  float targetGrip = committedGripper;
+
+  float r = sqrtf(target.x*target.x + target.y*target.y);
+  if (r < R_MIN || r > R_MAX || target.z < Z_MIN || target.z > Z_MAX) {
+    Serial.println("WS ERR");
+    return;
   }
-  if (!inputState.commitDown && btnWasDown) {
-    btnWasDown = false;
-    const unsigned long heldMs = now - pressStartMs;
 
-    if (heldMs > 700) {
-      trajMode = true;
-      traj.reset();
-      Serial.println("TRAJ: start");
-    } else {
-      // Short press -> latch potentiometer target
-      trajMode = false;
-      committedTargetPosition = inputState.target;
-      committedGripper = inputState.gripper01;
-      hasCommitted = true;
+  IKResult result = inverseKinematics(target, L1, L2, h, ELBOW_UP);
+  if (!result.ok) {
+    Serial.println("IK ERR");
+    return;
+  }
 
-      Serial.print("COMMIT x="); Serial.print(committedTargetPosition.x, 3);
-      Serial.print(" y=");       Serial.print(committedTargetPosition.y, 3);
-      Serial.print(" z=");       Serial.print(committedTargetPosition.z, 3);
+  lastCommandQ = result.q;
+  lastTcpPosBase = forwardKinematics(result.q, L1, L2, h);
+  lastRBaseTcp = tcpRotationBase(result.q);
+  havePose = true;
+
+  if (debugPrint) {
+    unsigned long nowMs = millis();
+    if (nowMs - lastDbgMs >= DBG_PERIOD_MS) {
+      lastDbgMs = nowMs;
+
+      Vec3 fk = lastTcpPosBase;
+      Serial.print("DBG err: ");
+      Serial.print(target.x - fk.x,4); Serial.print(" ");
+      Serial.print(target.y - fk.y,4); Serial.print(" ");
+      Serial.print(target.z - fk.z,4);
+      Serial.print(" | q: ");
+      Serial.print(result.q.q1*180/PI,1); Serial.print(" ");
+      Serial.print(result.q.q2*180/PI,1); Serial.print(" ");
+      Serial.print(result.q.q3*180/PI,1);
       Serial.println();
     }
   }
 
-  Vec3 target{};
-  float targetGripper = 0.5f;
-
-  if (trajMode) {
-    if (traj.finished()) {
-      trajMode = false;
-      Serial.println("TRAJ: finished");
-      return;
-    }
-    const Waypoint& wp = traj.current();
-    target = wp.targetPos;
-    targetGripper = wp.gripper;
-  } else {
-    if (!hasCommitted) return;
-    target = committedTargetPosition;
-    targetGripper = committedGripper;
-  }
-
-  const IKResult result = inverseKinematics(target, L1, L2, h, ELBOW_UP);
-  const ServoAngles targetAngles = mapToServos(result.q, targetGripper);
-  const ServoAngles cur = motion.stepToward(targetAngles, dt, MAX_SPEED_DEG_PER_S);
-
+  ServoAngles targetAngles = mapToServos(result.q, targetGrip);
+  ServoAngles cur = motion.stepToward(targetAngles, dt, MAX_SPEED_DEG_PER_S);
   writeServos(cur);
-
-  if (trajMode && arrived(cur, targetAngles)) {
-    traj.advanceIfArrived(true);
-  }
 }
