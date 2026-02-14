@@ -1,9 +1,9 @@
 #pragma once
 #include <Arduino.h>
 
-static constexpr float L1 = 0.120f;  // [m]
-static constexpr float L2 = 0.100f;  // [m]
-static constexpr float h  = 0.014f;  // [m]
+static constexpr float L1 = 0.080f;  // [m]
+static constexpr float L2 = 0.068f;  // [m]
+static constexpr float h  = 0.027f;  // [m]
 
 // Workspace limits
 static constexpr float R_MIN = 0.05f;
@@ -36,7 +36,7 @@ static constexpr float SERVO_MAX_DEG = 180.0f;
 
 static constexpr float BASE_ZERO_DEG     = 90.0f;
 static constexpr float SHOULDER_ZERO_DEG = 45.0f;
-static constexpr float ELBOW_ZERO_DEG    = 45.0f;
+static constexpr float ELBOW_ZERO_DEG    = 90.0f;
 
 static constexpr int BASE_SIGN     = +1;
 static constexpr int SHOULDER_SIGN = -1;
@@ -53,3 +53,9 @@ static constexpr float Q3_MAX = +PI*3/4;
 
 static constexpr float MAX_SPEED_DEG_PER_S = 180.0f;  // max speed
 static constexpr float LOOP_DT_S = 0.02f;            // 20ms
+
+static constexpr bool ELBOW_SERVO_USES_FOREARM_ABS = false; // true => q2+q3, false => q3
+
+// Debug: print a warning (rate-limited) if any servo command saturates at 0..180.
+static constexpr bool ENABLE_SERVO_SAT_WARN = true;
+static constexpr unsigned long SERVO_SAT_WARN_PERIOD_MS = 1000;

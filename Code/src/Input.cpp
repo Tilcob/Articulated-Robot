@@ -28,8 +28,8 @@ InputState readInputs() {
   const float r = sqrt(inputState.target.x*inputState.target.x + inputState.target.y*inputState.target.y);
   
   if (r < 1e-6f) {
-    inputState.target.x *= R_MIN;
-    inputState.target.y *= .0f;
+    inputState.target.x = R_MIN;
+    inputState.target.y = 0.0f;
   } else if (r < R_MIN) {
     const float scale = R_MIN / r;
     inputState.target.x *= scale;
