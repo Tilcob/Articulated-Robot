@@ -279,8 +279,7 @@ void loop() {
 
   IKResult result = inverseKinematics(target, L1, L2, h, ELBOW_UP);
   if (!result.ok) {
-    Serial.println("IK ERR");
-    return;
+    Serial.println("IK WARN: clamped");
   }
 
   lastCommandQ = result.q;

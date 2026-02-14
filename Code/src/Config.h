@@ -7,7 +7,7 @@ static constexpr float h  = 0.027f;  // [m]
 
 // Workspace limits
 static constexpr float R_MIN = 0.05f;
-static constexpr float R_MAX = (L1 + L2) * 0.95f;
+static constexpr float R_MAX = (L1 + L2);
 static constexpr float Z_MIN = h - 0.02f;
 static constexpr float Z_MAX = h + (L1 + L2) * 0.80f;
 

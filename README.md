@@ -209,7 +209,7 @@ This is the combination of the configured cylindrical boundaries and the actual 
 * `L2 = 0.068 m`
 * `h  = 0.027 m`
 * `R_MIN = 0.050 m`
-* `R_MAX = 0.95 * (L1+L2) = 0.1406 m`
+* `R_MAX = L1 + L2 = 0.148 m`
 * `Z_MIN = h - 0.02 = 0.007 m`
 * `Z_MAX = h + 0.80*(L1+L2) = 0.1454 m`
 * Additional IK ring: `0.012 m <= d <= 0.148 m`
