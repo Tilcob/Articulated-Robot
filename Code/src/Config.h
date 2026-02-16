@@ -60,3 +60,6 @@ static constexpr bool ELBOW_SERVO_USES_FOREARM_ABS = false; // true => q2+q3, fa
 // Debug: print a warning (rate-limited) if any servo command saturates at 0..180.
 static constexpr bool ENABLE_SERVO_SAT_WARN = false;
 static constexpr unsigned long SERVO_SAT_WARN_PERIOD_MS = 1000;
+
+// Trajectory timing (time per segment between two waypoints)
+static constexpr float TRAJ_SEG_TIME_S = 1.0f;

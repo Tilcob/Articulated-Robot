@@ -65,7 +65,7 @@ static void homing(const float dt) {
   }
 }
 
-static void handleButtonPress(const InputState &inputState, const float now = millis()) {
+static void handleButtonPress(const InputState &inputState, const unsigned long now) {
   if (inputState.commitPressed) {
     btnWasDown = true;
     pressStartMs = now;
@@ -144,7 +144,7 @@ void robotLoop() {
   const InputState inputState = readInputs();
 
   // Long/Short press handling
-  handleButtonPress(inputState);
+  handleButtonPress(inputState, millis());
 
   // Serial commit
   Vec3 serialPos{};
@@ -163,13 +163,13 @@ void robotLoop() {
   float targetGrip = committedGripper;
 
   if (trajMode) {
+    const Waypoint wp = traj.sample(dt);
+    target = wp.targetPos;
+    targetGrip = wp.gripper;
+
     if (traj.finished()) {
       trajMode = false;
       Serial.println("TRAJ done");
-    } else {
-      const Waypoint& wp = traj.current();
-      target = wp.targetPos;
-      targetGrip = wp.gripper;
     }
   }
 
@@ -195,11 +195,14 @@ void robotLoop() {
   }
 
   const ServoAngles targetAngles = mapToServos(result.q, targetGrip);
-  const ServoAngles cur = motion.stepToward(targetAngles, dt, MAX_SPEED_DEG_PER_S, MAX_ACC_DEG_PER_S2);
-  writeServos(servoBase, servoShoulder, servoElbow, servoGripper, cur);
+  float speed = MAX_SPEED_DEG_PER_S;
+  float acc   = MAX_ACC_DEG_PER_S2;
 
-  if (trajMode && traj.advanceIfArrived(arrived(cur, targetAngles)) && traj.finished()) {
-    trajMode = false;
-    Serial.println("TRAJ done");
+  if (trajMode) {
+    speed *= 0.6f;
+    acc   *= 0.6f;
   }
+
+  const ServoAngles cur = motion.stepToward(targetAngles, dt, speed, acc);
+  writeServos(servoBase, servoShoulder, servoElbow, servoGripper, cur);
 }
