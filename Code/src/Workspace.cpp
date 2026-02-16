@@ -1,6 +1,7 @@
 #include "Workspace.h"
 #include <math.h>
 #include "Config.h"
+#include "Util.h"
 
 static Vec3 clampReachDistance(Vec3 t) {
 	const float r = sqrtf(t.x * t.x + t.y * t.y);
@@ -49,8 +50,15 @@ WorkspaceResult clampToWorkspace(const Vec3 &target) {
 	out.wasOutOfBounds = zBad || dBad;
 	if (!out.wasOutOfBounds) return out;
 
+	Vec3 t = target;
+	t.z = util::clampf(t.z, cfg::Z_MIN, cfg::Z_MAX);
+
+	t = clampReachDistance(t);
+	t.z = util::clampf(t.z, cfg::Z_MIN, cfg::Z_MAX);
+	t = clampReachDistance(t);
+
 	// Clamp: keep direction, scale distance into reachable annulus.
-	out.clamped = clampReachDistance(target);
+	out.clamped = t;
 	out.wasClamped = true;
 	return out;
 }
