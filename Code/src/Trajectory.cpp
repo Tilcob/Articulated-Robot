@@ -4,11 +4,11 @@
 
 // Definition of the target positions
 const Waypoint TRAJ_POINTS[] = {
-    { {0.3f,  0.00f, 0.09f}, 0.5f },
-    { {0.40f,  -0.5f, 0.11f}, 0.5f },
-    { {0.08f, -0.6f, 0.06f}, 0.2f },
-    { {-0.4f,  0.00f, 0.05f}, 0.8f },
-    { {-0.8f,  -0.05f, 0.6f}, 1.0f }
+    { {0.03f,  0.00f, 0.09f}, 0.5f },
+    { {0.04f,  -0.05f, 0.11f}, 0.5f },
+    { {0.08f, -0.06f, 0.06f}, 0.2f },
+    { {-0.04f,  0.00f, 0.05f}, 0.8f },
+    { {-0.08f,  -0.05f, 0.06f}, 1.0f }
   };
 
 const int TRAJ_COUNT = sizeof(TRAJ_POINTS)/sizeof(TRAJ_POINTS[0]);
