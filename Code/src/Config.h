@@ -35,24 +35,25 @@ static constexpr float SERVO_MIN_DEG = 0.0f;
 static constexpr float SERVO_MAX_DEG = 180.0f;
 
 static constexpr float BASE_ZERO_DEG     = 90.0f;
-static constexpr float SHOULDER_ZERO_DEG = 45.0f;
-static constexpr float ELBOW_ZERO_DEG    = 90.0f;
+static constexpr float SHOULDER_ZERO_DEG = 90.0f;
+static constexpr float ELBOW_ZERO_DEG    = 45.0f;
 
 static constexpr int BASE_SIGN     = +1;
 static constexpr int SHOULDER_SIGN = -1;
 static constexpr int ELBOW_SIGN    = +1;
 
-static constexpr float Q1_MIN = -PI/2;
-static constexpr float Q1_MAX = +PI/2;
+static constexpr float Q1_MIN = 0;
+static constexpr float Q1_MAX = PI;
 
-static constexpr float Q2_MIN = -PI/2;
-static constexpr float Q2_MAX = +PI/2;
+static constexpr float Q2_MIN = 0;
+static constexpr float Q2_MAX = PI;
 
-static constexpr float Q3_MIN = -PI/2;
-static constexpr float Q3_MAX = +PI/2;
+static constexpr float Q3_MIN = 0;
+static constexpr float Q3_MAX = 3*PI/4;
 
-static constexpr float MAX_SPEED_DEG_PER_S = 180.0f;  // max speed
+static constexpr float MAX_SPEED_DEG_PER_S = 25.0f;  // max speed
 static constexpr float LOOP_DT_S = 0.02f;            // 20ms
+static constexpr float MAX_ACC_DEG_PER_S2 = 120.0f;
 
 static constexpr bool ELBOW_SERVO_USES_FOREARM_ABS = false; // true => q2+q3, false => q3
 

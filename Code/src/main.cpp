@@ -41,7 +41,7 @@ static constexpr unsigned long DBG_PERIOD_MS = 200;
 
 // ------------------------------------------------------------------------
 
-static bool nearf(float a, float b, float eps) {
+static bool nearf(const float a, const float b, const float eps) {
   return fabsf(a - b) <= eps;
 }
 
@@ -54,10 +54,10 @@ static bool arrived(const ServoAngles& cur, const ServoAngles& tgt) {
 }
 
 static void writeServos(const ServoAngles& a) {
-  servoBase.write((int)a.baseDeg);
-  servoShoulder.write((int)a.shoulderDeg);
-  servoElbow.write((int)a.elbowDeg);
-  servoGripper.write((int)a.gripperDeg);
+  servoBase.write(static_cast<int>(lroundf(a.baseDeg)));
+  servoShoulder.write(static_cast<int>(lroundf(a.shoulderDeg)));
+  servoElbow.write(static_cast<int>(lroundf(a.elbowDeg)));
+  servoGripper.write(static_cast<int>(lroundf(a.gripperDeg)));
 }
 
 // ------------------------------------------------------------------------
@@ -173,24 +173,25 @@ void setup() {
   lastMs = millis();
   initInputs();
 
-  // FIX 1: keinen Default commit außerhalb des Workspace setzen
-  committedTargetPosition = Vec3{(L1 + L2) * 0.8f, 0, h}; // sicher innerhalb R_MAX
+  committedTargetPosition = Vec3{(L1 + L2) * 0.8f, 0, h};
   committedGripper = 0.5f;
-  hasCommitted = false; // erst fahren nach Button/Serial
+  hasCommitted = false;
 }
 
 // ------------------------------------------------------------------------
 
 void loop() {
 
-  unsigned long now = millis();
+  const unsigned long now = millis();
   float dt = (now - lastMs)/1000.0f;
   if (dt < LOOP_DT_S) return;
   lastMs = now;
 
+  dt = constrain(dt, LOOP_DT_S, 0.05f);
+
   // ---- Homing ----------------------------------------------------------
   if (homing) {
-    ServoAngles cur = motion.stepToward(homeServo, dt, MAX_SPEED_DEG_PER_S);
+    const ServoAngles cur = motion.stepToward(homeServo, dt, MAX_SPEED_DEG_PER_S, MAX_ACC_DEG_PER_S2);
     writeServos(cur);
 
     if (arrived(cur, homeServo)) {
@@ -305,8 +306,8 @@ void loop() {
     }
   }
 
-  ServoAngles targetAngles = mapToServos(result.q, targetGrip);
-  ServoAngles cur = motion.stepToward(targetAngles, dt, MAX_SPEED_DEG_PER_S);
+  const ServoAngles targetAngles = mapToServos(result.q, targetGrip);
+  const ServoAngles cur = motion.stepToward(targetAngles, dt, MAX_SPEED_DEG_PER_S, MAX_ACC_DEG_PER_S2);
   writeServos(cur);
 
   if (trajMode && traj.advanceIfArrived(arrived(cur, targetAngles)) && traj.finished()) {
