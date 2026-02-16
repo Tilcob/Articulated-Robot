@@ -1,4 +1,5 @@
 #include "SerialControl.h"
+#include "Util.h"
 
 #include <Arduino.h>
 #include <ctype.h>
@@ -69,8 +70,8 @@ bool readSerialTcpCommand(bool& debugPrint,
           Serial.println("ERR: no pose yet");
           return false;
         }
-        const Vec3 d_base = mul(lastRBaseTcp, parsed);
-        outPos = add(lastTcpPosBase, d_base);
+        const Vec3 d_base = math3::mul(lastRBaseTcp, parsed);
+        outPos = math3::add(lastTcpPosBase, d_base);
       } else {
         outPos = parsed;
       }

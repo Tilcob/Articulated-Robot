@@ -46,18 +46,18 @@ static float calDeltaTime() {
   const unsigned long now = millis();
   const float dt = (now - lastMs)/1000.0f;
   lastMs = now;
-  return constrain(dt, LOOP_DT_S, 0.05f);
+  return constrain(dt, cfg::LOOP_DT_S, 0.05f);
 }
 
 static void homing(const float dt) {
-  const ServoAngles cur = motion.stepToward(homeServo, dt, MAX_SPEED_DEG_PER_S, MAX_ACC_DEG_PER_S2);
+  const ServoAngles cur = motion.stepToward(homeServo, dt, cfg::MAX_SPEED_DEG_PER_S, cfg::MAX_ACC_DEG_PER_S2);
   writeServos(servoBase, servoShoulder, servoElbow, servoGripper, cur);
 
   if (arrived(cur, homeServo)) {
     homingFlag = false;
 
     lastCommandQ = Angles{0,0,0};
-    lastTcpPosBase = forwardKinematics(lastCommandQ, L1, L2, h);
+    lastTcpPosBase = forwardKinematics(lastCommandQ, cfg::L1, cfg::L2, cfg::h);
     lastRBaseTcp = tcpRotationBase(lastCommandQ);
     havePose = true;
 
@@ -99,7 +99,7 @@ void robotSetup() {
   cal.baseDeg = 90; cal.shoulderDeg = 90; cal.elbowDeg = 90; cal.gripperDeg = 60;
   writeServos(servoBase, servoShoulder, servoElbow, servoGripper, cal);
 
-  while (ENABLE_CALIBRATION_MODE) {
+  while (cfg::ENABLE_CALIBRATION_MODE) {
     if (!Serial.available()) continue;
     const char cmd = Serial.read();
     if (cmd == '\n' || cmd == '\r' || cmd == ' ') continue;
@@ -113,7 +113,7 @@ void robotSetup() {
     }
 
     float v = Serial.parseFloat();
-    v = constrain(v, SERVO_MIN_DEG, SERVO_MAX_DEG);
+    v = constrain(v, cfg::SERVO_MIN_DEG, cfg::SERVO_MAX_DEG);
 
     if (cmd == 'b') cal.baseDeg = v;
     if (cmd == 's') cal.shoulderDeg = v;
@@ -124,10 +124,10 @@ void robotSetup() {
 
 
   ServoAngles start{};
-  start.baseDeg     = BASE_ZERO_DEG;
-  start.shoulderDeg = SHOULDER_ZERO_DEG;
-  start.elbowDeg    = ELBOW_ZERO_DEG;
-  start.gripperDeg  = 60;
+  start.baseDeg = cfg::BASE_ZERO_DEG;
+  start.shoulderDeg = cfg::SHOULDER_ZERO_DEG;
+  start.elbowDeg = cfg::ELBOW_ZERO_DEG;
+  start.gripperDeg = 60;
 
   motion.setCurrent(start);
   writeServos(servoBase, servoShoulder, servoElbow, servoGripper, start);
@@ -140,7 +140,7 @@ void robotSetup() {
   lastMs = millis();
   initInputs();
 
-  committedTargetPosition = Vec3{(L1 + L2) * 0.8f, 0, h};
+  committedTargetPosition = Vec3{(cfg::L1 + cfg::L2) * 0.8f, 0, cfg::h};
   committedGripper = 0.5f;
   hasCommitted = false;
 }
@@ -160,6 +160,29 @@ void log_debug_information(const Vec3 &target, const IKResult &result) {
     Serial.print(result.q.q3*180/PI,1);
     Serial.println();
   }
+}
+
+static Vec3 clampToReachable(Vec3 t) {
+  const float r = sqrtf(t.x*t.x + t.y*t.y);
+  const float z = t.z - cfg::h;
+  const float d = sqrtf(r*r + z*z);
+
+  const float dMin = fabsf(cfg::L1 - cfg::L2);
+  constexpr float dMax = cfg::L1 + cfg::L2;
+  constexpr float EPS = 1e-4f;
+
+  if (d < EPS) return t;
+
+  if (d > dMax) {
+    const float s = dMax / d;
+    t.x *= s; t.y *= s;
+    t.z = cfg::h + z * s;
+  } else if (d < dMin) {
+    const float s = dMin / d;
+    t.x *= s; t.y *= s;
+    t.z = cfg::h + z * s;
+  }
+  return t;
 }
 
 void robotLoop() {
@@ -203,19 +226,41 @@ void robotLoop() {
   }
 
   static bool wsWarned = false;
-  const float r = sqrtf(target.x*target.x + target.y*target.y);
-  if (r < R_MIN || r > R_MAX || target.z < Z_MIN || target.z > Z_MAX) {
-    if (!wsWarned) Serial.println("WS ERR");
-    wsWarned = true;
-    return;
-  }
-  wsWarned = false;
 
-  const IKResult result = inverseKinematics(target, L1, L2, h, ELBOW_UP);
-  if (!result.ok) Serial.println("IK WARN: clamped");
+  const float r = sqrtf(target.x*target.x + target.y*target.y);
+  const float z = target.z - cfg::h;
+  const float d = sqrtf(r*r + z*z);
+
+  const float dMin = fabsf(cfg::L1 - cfg::L2);
+  constexpr float dMax = cfg::L1 + cfg::L2;
+
+  constexpr float EPS = 1e-4f;
+
+  const bool wsBad =
+      (target.z < cfg::Z_MIN - EPS) || (target.z > cfg::Z_MAX + EPS) ||
+      (d < dMin - EPS) || (d > dMax + EPS);
+
+  if (wsBad) {
+    if (!wsWarned) Serial.println("WS clamp");
+    wsWarned = true;
+
+    target = clampToReachable(target);
+  }
+  else {
+    wsWarned = false;
+  }
+
+  const IKResult result = inverseKinematics(target, cfg::L1, cfg::L2, cfg::h, cfg::ELBOW_UP);
+  static bool ikWarned = false;
+  if (!result.ok) {
+    if (!ikWarned) Serial.println("IK WARN: clamped");
+    ikWarned = true;
+  } else {
+    ikWarned = false;
+  }
 
   lastCommandQ = result.q;
-  lastTcpPosBase = forwardKinematics(result.q, L1, L2, h);
+  lastTcpPosBase = forwardKinematics(result.q, cfg::L1, cfg::L2, cfg::h);
   lastRBaseTcp = tcpRotationBase(result.q);
   havePose = true;
 
@@ -224,6 +269,7 @@ void robotLoop() {
   }
 
   const ServoAngles targetAngles = mapToServos(result.q, targetGrip);
-  const ServoAngles cur = motion.stepToward(targetAngles, dt, MAX_SPEED_DEG_PER_S, MAX_ACC_DEG_PER_S2);
+  const ServoAngles cur = motion.stepToward(targetAngles, dt,
+    cfg::MAX_SPEED_DEG_PER_S, cfg::MAX_ACC_DEG_PER_S2);
   writeServos(servoBase, servoShoulder, servoElbow, servoGripper, cur);
 }

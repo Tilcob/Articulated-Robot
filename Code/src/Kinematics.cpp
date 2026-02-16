@@ -1,16 +1,7 @@
 #include "Kinematics.h"
-#include <Arduino.h>
+#include "Util.h"
 #include <math.h>
 
-static float clampf(float const x, float const lo, float const hi) {
-  if (x < lo) return lo;
-  if (x > hi) return hi;
-  return x;
-}
-
-//   x =  cos(q1) * (L1 cos(q2) + L2 cos(q2+q3))
-//   y = -sin(q1) * (L1 cos(q2) + L2 cos(q2+q3))
-//   z =  h + L1 sin(q2) + L2 sin(q2+q3)
 Vec3 forwardKinematics(const Angles& q, float const L1, float const L2, float const h) {
   float const r = L1 * cosf(q.q2) + L2 * cosf(q.q2 + q.q3);
 
@@ -27,27 +18,31 @@ IKResult inverseKinematics(const Vec3& position, float const L1, float const L2,
   IKResult out{};
   out.ok = true;
 
-  // Base: q1
-  out.q.q1 = atan2f(-position.y, position.x);
-
   const float r = sqrtf(position.x * position.x + position.y * position.y);
+  if (r < 1e-6f) out.q.q1 = 0.0f;
+  else           out.q.q1 = atan2f(-position.y, position.x);
+
   const float z = position.z - h;
   float d = sqrtf(r*r + z*z);
 
   const float dMin = fabsf(L1 - L2);
   const float dMax = L1 + L2;
-  if (d < dMin) { d = dMin; out.ok = false; }
-  if (d > dMax) { d = dMax; out.ok = false; }
+  constexpr float EPS = 1e-4f;
 
-  // cos(q3)
+  if (d < dMin - EPS) { d = dMin; out.ok = false; }
+  else if (d < dMin) d = dMin;
+
+  if (d > dMax + EPS) { d = dMax; out.ok = false; }
+  else if (d > dMax) d = dMax;
+
   float c3 = (d*d - L1*L1 - L2*L2) / (2.0f * L1 * L2);
-  c3 = clampf(c3, -1.0f, 1.0f);
-  // sin(q3)
+  if (c3 < -1.0f || c3 > 1.0f) out.ok = false;
+  c3 = util::clampf(c3, -1.0f, 1.0f);
+
   float s3 = sqrtf(fmaxf(0.0f, 1.0f - c3*c3));
   if (elbowUp) s3 = -s3;
   out.q.q3 = atan2f(s3, c3);
 
-  // q2
   const float alpha = atan2f(z, r);
   const float beta  = atan2f(L2 * sinf(out.q.q3), L1 + L2 * cosf(out.q.q3));
   out.q.q2 = alpha - beta;
@@ -64,13 +59,9 @@ Mat3 tcpRotationBase(const Angles& q) {
   const Vec3 ey   = { s1,  c1, 0.0f };
   constexpr Vec3 ez   = { 0.0f,0.0f,1.0f };
 
-  const Vec3 x_tcp = { c*ex_r.x + s*ez.x, c*ex_r.y + s*ez.y, c*ex_r.z + s*ez.z }; // = c*ex_r + s*ez
+  const Vec3 x_tcp = { c*ex_r.x + s*ez.x, c*ex_r.y + s*ez.y, c*ex_r.z + s*ez.z };
   const Vec3 y_tcp = ey;
-  const Vec3 z_tcp = {
-    x_tcp.y*y_tcp.z - x_tcp.z*y_tcp.y,
-    x_tcp.z*y_tcp.x - x_tcp.x*y_tcp.z,
-    x_tcp.x*y_tcp.y - x_tcp.y*y_tcp.x
-  };
+  const Vec3 z_tcp = math3::cross(x_tcp, y_tcp);
 
   Mat3 R{};
   R.m[0][0] = x_tcp.x; R.m[0][1] = y_tcp.x; R.m[0][2] = z_tcp.x;

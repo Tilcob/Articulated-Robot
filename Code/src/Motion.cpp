@@ -1,9 +1,6 @@
 #include "Motion.h"
+#include "Util.h"
 #include <math.h>
-
-static float clampf(const float x, const float lo, const float hi) {
-  return (x < lo) ? lo : (x > hi) ? hi : x;
-}
 
 void MotionController::setCurrent(const ServoAngles& angles) {
   cur = angles;
@@ -13,7 +10,7 @@ ServoAngles MotionController::stepToward(const ServoAngles& target,
   const float dtSeconds, const float maxDegPerS, const float maxAccDegPerS2) {
 
   auto step = [&](float& pos, float& v, const float& tgt) {
-    const float velDestination = clampf((tgt - pos) / dtSeconds, -maxDegPerS, +maxDegPerS);
+    const float velDestination = util::clampf((tgt - pos) / dtSeconds, -maxDegPerS, +maxDegPerS);
 
     const float dvMax = maxAccDegPerS2 * dtSeconds;
     float dv = velDestination - v;
