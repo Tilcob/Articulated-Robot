@@ -9,12 +9,12 @@ struct Waypoint {
 class Trajectory {
 public:
     void reset();
-    const Waypoint& current() const;
-    bool advanceIfArrived(bool arrived);
+    Waypoint sample(float deltaTime);
     bool finished() const;
 
 private:
-    int idx = 0;
+    int segmentIndex = 0;
+    float interpParam = 0.0f;
 };
 
 extern const Waypoint TRAJ_POINTS[];
