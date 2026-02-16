@@ -14,9 +14,8 @@ ServoAngles mapToServos(const Angles& q, float const gripper01) {
   const float shoulderRaw = cfg::SHOULDER_ZERO_DEG + cfg::SHOULDER_SIGN * (q2 * cfg::RAD2DEG);
   const float elbowRaw    = cfg::ELBOW_ZERO_DEG + cfg::ELBOW_SIGN * (q3 * cfg::RAD2DEG);
 
-  constexpr float gripMin = 20.0f;
-  constexpr float gripMax = 120.0f;
-  inputState.gripperDeg = gripMin + gripper01 * (gripMax - gripMin);
+  inputState.gripperDeg = cfg::GRIPPER_MIN_DEG
+                      + gripper01 * (cfg::GRIPPER_MAX_DEG - cfg::GRIPPER_MIN_DEG);
 
   inputState.baseDeg     = util::clampf(baseRaw, cfg::SERVO_MIN_DEG, cfg::SERVO_MAX_DEG);
   inputState.shoulderDeg = util::clampf(shoulderRaw, cfg::SERVO_MIN_DEG, cfg::SERVO_MAX_DEG);

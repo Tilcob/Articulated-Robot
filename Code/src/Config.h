@@ -43,6 +43,10 @@ static constexpr int ADC_MAX = 1023;
 static constexpr float SERVO_MIN_DEG = 0.0f;
 static constexpr float SERVO_MAX_DEG = 180.0f;
 
+// --- Gripper mapping (servo degrees) ----------------------------------
+static constexpr float GRIPPER_MIN_DEG = 20.0f;
+static constexpr float GRIPPER_MAX_DEG = 120.0f;
+
 // --- Joint<->Servo mapping --------------------------------------------
 // Convention:
 //   servoDeg = zeroDeg + sign * jointDeg

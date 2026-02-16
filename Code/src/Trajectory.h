@@ -16,6 +16,3 @@ private:
     int segmentIndex = 0;
     float interpParam = 0.0f;
 };
-
-extern const Waypoint TRAJ_POINTS[];
-extern const int TRAJ_COUNT;

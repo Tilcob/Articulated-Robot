@@ -1,275 +1,304 @@
 #include "RobotApp.h"
+#include <Arduino.h>
 #include <Servo.h>
-
 #include "Config.h"
-#include "Types.h"
 #include "Input.h"
 #include "Kinematics.h"
 #include "Mapping.h"
 #include "Motion.h"
-#include "Trajectory.h"
-
-#include "ServoIO.h"
 #include "SerialControl.h"
+#include "ServoIO.h"
+#include "Trajectory.h"
+#include "Types.h"
+#include "Workspace.h"
 
-static Servo servoBase, servoShoulder, servoElbow, servoGripper;
-static MotionController motion;
+namespace {
+	struct Pose {
+		Angles q{};
+		Vec3 tcpPosBase{};
+		Mat3 rBaseTcp{};
+		bool valid{false};
+	};
 
-static unsigned long lastMs = 0;
+	class RobotApp {
+	public:
+		void setup();
+		void loop();
 
-static Vec3 committedTargetPosition{};
-static float committedGripper = 0.0f;
-static bool hasCommitted = false;
+	private:
+		float calcDt_();
+		void runHoming_(float dt);
+		void handleButton_(const InputState &in, unsigned long nowMs);
+		void handleSerial_();
+		void updateTargetFromTrajectory_(float dt);
+		void clampTargetToWorkspace_();
+		void solveIK_();
+		void updatePoseFromQ_();
+		void debugLog_();
+		void enterTrajectoryMode_();
+		void commitManualTarget_(const InputState &in);
+		void commitSerialTarget_(const Vec3 &pos, float grip01);
 
-static Trajectory traj;
-static bool trajMode = false;
+		Servo servoBase_;
+		Servo servoShoulder_;
+		Servo servoElbow_;
+		Servo servoGripper_;
+		MotionController motion_;
+		SerialControl serial_;
 
-static bool btnWasDown = false;
-static unsigned long pressStartMs = 0;
-static constexpr unsigned long LONG_PRESS_MS = 700;
+		unsigned long lastMs_{0};
 
-static Angles lastCommandQ{};
-static Vec3   lastTcpPosBase{};
-static Mat3   lastRBaseTcp{};
-static bool   havePose = false;
+		Vec3 committedTargetPos_{};
+		float committedGrip01_{0.5f};
+		bool hasCommit_{false};
 
-// Homing
-static bool homingFlag = true;
-static ServoAngles homeServo{};
+		Vec3 targetPos_{};
+		float targetGrip01_{0.5f};
 
-// Debug
-static bool debugPrint = false;
-static unsigned long lastDbgMs = 0;
-static constexpr unsigned long DBG_PERIOD_MS = 200;
+		Trajectory traj_;
+		bool trajMode_{false};
 
-static float calDeltaTime() {
-  const unsigned long now = millis();
-  const float dt = (now - lastMs)/1000.0f;
-  lastMs = now;
-  return constrain(dt, cfg::LOOP_DT_S, 0.05f);
+		bool btnWasDown_{false};
+		unsigned long pressStartMs_{0};
+		static constexpr unsigned long LONG_PRESS_MS = 700;
+
+		Pose pose_;
+
+		bool homing_{true};
+		ServoAngles homeServo_{};
+
+		IKResult ik_{};
+		ServoAngles targetServo_{};
+
+		bool debugPrint_{false};
+		unsigned long lastDbgMs_{0};
+		static constexpr unsigned long DBG_PERIOD_MS = 200;
+		bool wsWarned_{false};
+		bool ikWarned_{false};
+	};
+
+	float RobotApp::calcDt_() {
+		const unsigned long now = millis();
+		const float dt = (now - lastMs_) / 1000.0f;
+		lastMs_ = now;
+		return constrain(dt, cfg::LOOP_DT_S, 0.05f);
+	}
+
+	void RobotApp::runHoming_(const float dt) {
+		const ServoAngles cur = motion_.stepToward(homeServo_, dt, cfg::MAX_SPEED_DEG_PER_S, cfg::MAX_ACC_DEG_PER_S2);
+		writeServos(servoBase_, servoShoulder_, servoElbow_, servoGripper_, cur);
+
+		if (!arrived(cur, homeServo_)) return;
+
+		homing_ = false;
+
+		pose_.q = Angles{0, 0, 0};
+		pose_.tcpPosBase = forwardKinematics(pose_.q, cfg::L1, cfg::L2, cfg::h);
+		pose_.rBaseTcp = tcpRotationBase(pose_.q);
+		pose_.valid = true;
+
+		Serial.println("HOMING done.");
+	}
+
+	void RobotApp::enterTrajectoryMode_() {
+		traj_.reset();
+		trajMode_ = true;
+		hasCommit_ = true;
+		Serial.println("TRAJ start");
+	}
+
+	void RobotApp::commitManualTarget_(const InputState &in) {
+		trajMode_ = false;
+		committedTargetPos_ = in.target;
+		committedGrip01_ = in.gripper01;
+		hasCommit_ = true;
+		Serial.println("COMMIT manual target");
+	}
+
+	void RobotApp::commitSerialTarget_(const Vec3 &pos, float grip01) {
+		trajMode_ = false;
+		committedTargetPos_ = pos;
+		committedGrip01_ = grip01;
+		hasCommit_ = true;
+		Serial.println("COMMIT (serial)");
+	}
+
+	void RobotApp::handleButton_(const InputState &in, const unsigned long nowMs) {
+		if (in.commitPressed) {
+			btnWasDown_ = true;
+			pressStartMs_ = nowMs;
+		}
+
+		if (!btnWasDown_ || in.commitDown) return;
+
+		const unsigned long pressMs = nowMs - pressStartMs_;
+		btnWasDown_ = false;
+
+		if (pressMs >= LONG_PRESS_MS) enterTrajectoryMode_();
+		else commitManualTarget_(in);
+	}
+
+	void RobotApp::handleSerial_() {
+		Vec3 serialPos{};
+		float serialGrip = committedGrip01_;
+		if (!serial_.poll(debugPrint_, pose_.valid, pose_.tcpPosBase, pose_.rBaseTcp, serialPos, serialGrip)) return;
+		commitSerialTarget_(serialPos, serialGrip);
+	}
+
+	void RobotApp::updateTargetFromTrajectory_(const float dt) {
+		if (!trajMode_) return;
+
+		const Waypoint wp = traj_.sample(dt);
+		targetPos_ = wp.targetPos;
+		targetGrip01_ = wp.gripper;
+
+		if (!traj_.finished()) return;
+		trajMode_ = false;
+		Serial.println("TRAJ done");
+	}
+
+	void RobotApp::clampTargetToWorkspace_() {
+		const WorkspaceResult ws = clampToWorkspace(targetPos_);
+		if (!ws.wasOutOfBounds) {
+			wsWarned_ = false;
+			return;
+		}
+
+		if (!wsWarned_) Serial.println("WS clamp");
+		wsWarned_ = true;
+		targetPos_ = ws.clamped;
+	}
+
+	void RobotApp::solveIK_() {
+		ik_ = inverseKinematics(targetPos_, cfg::L1, cfg::L2, cfg::h, cfg::ELBOW_UP);
+		if (!ik_.ok) {
+			if (!ikWarned_) Serial.println("IK WARN: clamped");
+			ikWarned_ = true;
+		} else {
+			ikWarned_ = false;
+		}
+	}
+
+	void RobotApp::updatePoseFromQ_() {
+		pose_.q = ik_.q;
+		pose_.tcpPosBase = forwardKinematics(pose_.q, cfg::L1, cfg::L2, cfg::h);
+		pose_.rBaseTcp = tcpRotationBase(pose_.q);
+		pose_.valid = true;
+	}
+
+	void RobotApp::debugLog_() {
+		if (!debugPrint_) return;
+		const unsigned long nowMs = millis();
+		if (nowMs - lastDbgMs_ < DBG_PERIOD_MS) return;
+		lastDbgMs_ = nowMs;
+
+		const Vec3 fk = pose_.tcpPosBase;
+		Serial.print("DBG err: ");
+		Serial.print(targetPos_.x - fk.x, 4);
+		Serial.print(" ");
+		Serial.print(targetPos_.y - fk.y, 4);
+		Serial.print(" ");
+		Serial.print(targetPos_.z - fk.z, 4);
+		Serial.print(" | q: ");
+		Serial.print(ik_.q.q1 * 180 / PI, 1);
+		Serial.print(" ");
+		Serial.print(ik_.q.q2 * 180 / PI, 1);
+		Serial.print(" ");
+		Serial.print(ik_.q.q3 * 180 / PI, 1);
+		Serial.println();
+	}
+
+	void RobotApp::setup() {
+		Serial.begin(115200);
+
+		attachServos(servoBase_, servoShoulder_, servoElbow_, servoGripper_);
+
+		Serial.println("CALIB MODE: type: b <deg>, s <deg>, e <deg>, p=print, x=exit");
+		ServoAngles cal{};
+		cal.baseDeg = 90;
+		cal.shoulderDeg = 90;
+		cal.elbowDeg = 90;
+		cal.gripperDeg = 60;
+		writeServos(servoBase_, servoShoulder_, servoElbow_, servoGripper_, cal);
+
+		while (cfg::ENABLE_CALIBRATION_MODE) {
+			if (!Serial.available()) continue;
+			const char cmd = Serial.read();
+			if (cmd == '\n' || cmd == '\r' || cmd == ' ') continue;
+
+			if (cmd == 'x') break;
+			if (cmd == 'p') {
+				Serial.print("B=");
+				Serial.print(cal.baseDeg);
+				Serial.print(" S=");
+				Serial.print(cal.shoulderDeg);
+				Serial.print(" E=");
+				Serial.println(cal.elbowDeg);
+				continue;
+			}
+
+			float v = Serial.parseFloat();
+			v = constrain(v, cfg::SERVO_MIN_DEG, cfg::SERVO_MAX_DEG);
+
+			if (cmd == 'b') cal.baseDeg = v;
+			if (cmd == 's') cal.shoulderDeg = v;
+			if (cmd == 'e') cal.elbowDeg = v;
+
+			writeServos(servoBase_, servoShoulder_, servoElbow_, servoGripper_, cal);
+		}
+
+		ServoAngles start{};
+		start.baseDeg = cfg::BASE_ZERO_DEG;
+		start.shoulderDeg = cfg::SHOULDER_ZERO_DEG;
+		start.elbowDeg = cfg::ELBOW_ZERO_DEG;
+		start.gripperDeg = 60;
+
+		motion_.setCurrent(start);
+		writeServos(servoBase_, servoShoulder_, servoElbow_, servoGripper_, start);
+
+		constexpr Angles homeQ{0, 0, 0};
+		homeServo_ = mapToServos(homeQ, 0.5f);
+		homing_ = true;
+		Serial.println("HOMING: moving to q=(0,0,0)");
+
+		lastMs_ = millis();
+		initInputs();
+
+		committedTargetPos_ = Vec3{(cfg::L1 + cfg::L2) * 0.8f, 0, cfg::h};
+		committedGrip01_ = 0.5f;
+		hasCommit_ = false;
+	}
+
+	void RobotApp::loop() {
+		const float dt = calcDt_();
+
+		if (homing_) {
+			runHoming_(dt);
+			return;
+		}
+
+		const InputState in = readInputs();
+		handleButton_(in, millis());
+		handleSerial_();
+
+		if (!hasCommit_) return;
+
+		targetPos_ = committedTargetPos_;
+		targetGrip01_ = committedGrip01_;
+
+		updateTargetFromTrajectory_(dt);
+		clampTargetToWorkspace_();
+		solveIK_();
+		updatePoseFromQ_();
+		debugLog_();
+
+		targetServo_ = mapToServos(ik_.q, targetGrip01_);
+		const ServoAngles cur = motion_.stepToward(targetServo_, dt, cfg::MAX_SPEED_DEG_PER_S, cfg::MAX_ACC_DEG_PER_S2);
+		writeServos(servoBase_, servoShoulder_, servoElbow_, servoGripper_, cur);
+	}
+
+	RobotApp g_app;
 }
 
-static void homing(const float dt) {
-  const ServoAngles cur = motion.stepToward(homeServo, dt, cfg::MAX_SPEED_DEG_PER_S, cfg::MAX_ACC_DEG_PER_S2);
-  writeServos(servoBase, servoShoulder, servoElbow, servoGripper, cur);
-
-  if (arrived(cur, homeServo)) {
-    homingFlag = false;
-
-    lastCommandQ = Angles{0,0,0};
-    lastTcpPosBase = forwardKinematics(lastCommandQ, cfg::L1, cfg::L2, cfg::h);
-    lastRBaseTcp = tcpRotationBase(lastCommandQ);
-    havePose = true;
-
-    Serial.println("HOMING done.");
-  }
-}
-
-static void handleButtonPress(const InputState &inputState, const unsigned long now) {
-  if (inputState.commitPressed) {
-    btnWasDown = true;
-    pressStartMs = now;
-  }
-  if (btnWasDown && !inputState.commitDown) {
-    const unsigned long pressMs = now - pressStartMs;
-    btnWasDown = false;
-
-    if (pressMs >= LONG_PRESS_MS) {
-      traj.reset();
-      trajMode = true;
-      hasCommitted = true;
-      Serial.println("TRAJ start");
-    } else {
-      trajMode = false;
-      committedTargetPosition = inputState.target;
-      committedGripper = inputState.gripper01;
-      hasCommitted = true;
-      Serial.println("COMMIT manual target");
-    }
-  }
-}
-
-void robotSetup() {
-  Serial.begin(115200);
-
-  attachServos(servoBase, servoShoulder, servoElbow, servoGripper);
-
-  Serial.println("CALIB MODE: type: b <deg>, s <deg>, e <deg>, p=print, x=exit");
-  ServoAngles cal{};
-  cal.baseDeg = 90; cal.shoulderDeg = 90; cal.elbowDeg = 90; cal.gripperDeg = 60;
-  writeServos(servoBase, servoShoulder, servoElbow, servoGripper, cal);
-
-  while (cfg::ENABLE_CALIBRATION_MODE) {
-    if (!Serial.available()) continue;
-    const char cmd = Serial.read();
-    if (cmd == '\n' || cmd == '\r' || cmd == ' ') continue;
-
-    if (cmd == 'x') break;
-    if (cmd == 'p') {
-      Serial.print("B="); Serial.print(cal.baseDeg);
-      Serial.print(" S="); Serial.print(cal.shoulderDeg);
-      Serial.print(" E="); Serial.println(cal.elbowDeg);
-      continue;
-    }
-
-    float v = Serial.parseFloat();
-    v = constrain(v, cfg::SERVO_MIN_DEG, cfg::SERVO_MAX_DEG);
-
-    if (cmd == 'b') cal.baseDeg = v;
-    if (cmd == 's') cal.shoulderDeg = v;
-    if (cmd == 'e') cal.elbowDeg = v;
-
-    writeServos(servoBase, servoShoulder, servoElbow, servoGripper, cal);
-  }
-
-
-  ServoAngles start{};
-  start.baseDeg = cfg::BASE_ZERO_DEG;
-  start.shoulderDeg = cfg::SHOULDER_ZERO_DEG;
-  start.elbowDeg = cfg::ELBOW_ZERO_DEG;
-  start.gripperDeg = 60;
-
-  motion.setCurrent(start);
-  writeServos(servoBase, servoShoulder, servoElbow, servoGripper, start);
-
-  constexpr Angles homeQ{0,0,0};
-  homeServo = mapToServos(homeQ, 0.5f);
-  homingFlag = true;
-  Serial.println("HOMING: moving to q=(0,0,0)");
-
-  lastMs = millis();
-  initInputs();
-
-  committedTargetPosition = Vec3{(cfg::L1 + cfg::L2) * 0.8f, 0, cfg::h};
-  committedGripper = 0.5f;
-  hasCommitted = false;
-}
-
-void log_debug_information(const Vec3 &target, const IKResult &result) {
-  const unsigned long nowMs = millis();
-  if (nowMs - lastDbgMs >= DBG_PERIOD_MS) {
-    lastDbgMs = nowMs;
-    const Vec3 fk = lastTcpPosBase;
-    Serial.print("DBG err: ");
-    Serial.print(target.x - fk.x,4); Serial.print(" ");
-    Serial.print(target.y - fk.y,4); Serial.print(" ");
-    Serial.print(target.z - fk.z,4);
-    Serial.print(" | q: ");
-    Serial.print(result.q.q1*180/PI,1); Serial.print(" ");
-    Serial.print(result.q.q2*180/PI,1); Serial.print(" ");
-    Serial.print(result.q.q3*180/PI,1);
-    Serial.println();
-  }
-}
-
-static Vec3 clampToReachable(Vec3 t) {
-  const float r = sqrtf(t.x*t.x + t.y*t.y);
-  const float z = t.z - cfg::h;
-  const float d = sqrtf(r*r + z*z);
-
-  const float dMin = fabsf(cfg::L1 - cfg::L2);
-  constexpr float dMax = cfg::L1 + cfg::L2;
-  constexpr float EPS = 1e-4f;
-
-  if (d < EPS) return t;
-
-  if (d > dMax) {
-    const float s = dMax / d;
-    t.x *= s; t.y *= s;
-    t.z = cfg::h + z * s;
-  } else if (d < dMin) {
-    const float s = dMin / d;
-    t.x *= s; t.y *= s;
-    t.z = cfg::h + z * s;
-  }
-  return t;
-}
-
-void robotLoop() {
-  const float dt = calDeltaTime();
-
-  if (homingFlag) {
-    homing(dt);
-    return;
-  }
-
-  const InputState inputState = readInputs();
-
-  // Long/Short press handling
-  handleButtonPress(inputState, millis());
-
-  // Serial commit
-  Vec3 serialPos{};
-  float serialGrip = committedGripper;
-  if (readSerialTcpCommand(debugPrint, havePose, lastTcpPosBase, lastRBaseTcp, serialPos, serialGrip)) {
-    trajMode = false;
-    committedTargetPosition = serialPos;
-    committedGripper = serialGrip;
-    hasCommitted = true;
-    Serial.println("COMMIT (serial)");
-  }
-
-  if (!hasCommitted) return;
-
-  Vec3 target = committedTargetPosition;
-  float targetGrip = committedGripper;
-
-  if (trajMode) {
-    const Waypoint wp = traj.sample(dt);
-    target = wp.targetPos;
-    targetGrip = wp.gripper;
-
-    if (traj.finished()) {
-      trajMode = false;
-      Serial.println("TRAJ done");
-    }
-  }
-
-  static bool wsWarned = false;
-
-  const float r = sqrtf(target.x*target.x + target.y*target.y);
-  const float z = target.z - cfg::h;
-  const float d = sqrtf(r*r + z*z);
-
-  const float dMin = fabsf(cfg::L1 - cfg::L2);
-  constexpr float dMax = cfg::L1 + cfg::L2;
-
-  constexpr float EPS = 1e-4f;
-
-  const bool wsBad =
-      (target.z < cfg::Z_MIN - EPS) || (target.z > cfg::Z_MAX + EPS) ||
-      (d < dMin - EPS) || (d > dMax + EPS);
-
-  if (wsBad) {
-    if (!wsWarned) Serial.println("WS clamp");
-    wsWarned = true;
-
-    target = clampToReachable(target);
-  }
-  else {
-    wsWarned = false;
-  }
-
-  const IKResult result = inverseKinematics(target, cfg::L1, cfg::L2, cfg::h, cfg::ELBOW_UP);
-  static bool ikWarned = false;
-  if (!result.ok) {
-    if (!ikWarned) Serial.println("IK WARN: clamped");
-    ikWarned = true;
-  } else {
-    ikWarned = false;
-  }
-
-  lastCommandQ = result.q;
-  lastTcpPosBase = forwardKinematics(result.q, cfg::L1, cfg::L2, cfg::h);
-  lastRBaseTcp = tcpRotationBase(result.q);
-  havePose = true;
-
-  if (debugPrint) {
-    log_debug_information(target, result);
-  }
-
-  const ServoAngles targetAngles = mapToServos(result.q, targetGrip);
-  const ServoAngles cur = motion.stepToward(targetAngles, dt,
-    cfg::MAX_SPEED_DEG_PER_S, cfg::MAX_ACC_DEG_PER_S2);
-  writeServos(servoBase, servoShoulder, servoElbow, servoGripper, cur);
-}
+void robotSetup() { g_app.setup(); }
+void robotLoop() { g_app.loop(); }
