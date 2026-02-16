@@ -17,20 +17,18 @@ ServoAngles mapToServos(const Angles& q, float const gripper01) {
   float const q2 = clampf(q.q2, Q2_MIN, Q2_MAX);
   float const q3 = clampf(q.q3, Q3_MIN, Q3_MAX);
 
-  float const qElbow = ELBOW_SERVO_USES_FOREARM_ABS ? (q2 + q3) : q3;
-
-  const float baseRaw     = BASE_ZERO_DEG     + BASE_SIGN     * rad2deg(q1);
+  const float baseRaw = BASE_ZERO_DEG + BASE_SIGN * rad2deg(q1);
   const float shoulderRaw = SHOULDER_ZERO_DEG + SHOULDER_SIGN * rad2deg(q2);
-  const float elbowRaw    = ELBOW_ZERO_DEG    + ELBOW_SIGN    * rad2deg(qElbow);
+  const float elbowRaw = ELBOW_ZERO_DEG + ELBOW_SIGN * rad2deg(q3);
 
   constexpr float gripMin = 20.0f;
   constexpr float gripMax = 120.0f;
   inputState.gripperDeg = gripMin + gripper01 * (gripMax - gripMin);
 
-  inputState.baseDeg     = clampf(baseRaw,     SERVO_MIN_DEG, SERVO_MAX_DEG);
+  inputState.baseDeg = clampf(baseRaw, SERVO_MIN_DEG, SERVO_MAX_DEG);
   inputState.shoulderDeg = clampf(shoulderRaw, SERVO_MIN_DEG, SERVO_MAX_DEG);
-  inputState.elbowDeg    = clampf(elbowRaw,    SERVO_MIN_DEG, SERVO_MAX_DEG);
-  inputState.gripperDeg  = clampf(inputState.gripperDeg,  SERVO_MIN_DEG, SERVO_MAX_DEG);
+  inputState.elbowDeg = clampf(elbowRaw,SERVO_MIN_DEG, SERVO_MAX_DEG);
+  inputState.gripperDeg = clampf(inputState.gripperDeg, SERVO_MIN_DEG, SERVO_MAX_DEG);
 
   // If we had to clamp, it can look like "wrong kinematics".
   // Print a rate-limited warning to make this visible.

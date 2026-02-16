@@ -94,6 +94,35 @@ void robotSetup() {
 
   attachServos(servoBase, servoShoulder, servoElbow, servoGripper);
 
+  Serial.println("CALIB MODE: type: b <deg>, s <deg>, e <deg>, p=print, x=exit");
+  ServoAngles cal{};
+  cal.baseDeg = 90; cal.shoulderDeg = 90; cal.elbowDeg = 90; cal.gripperDeg = 60;
+  writeServos(servoBase, servoShoulder, servoElbow, servoGripper, cal);
+
+  while (ENABLE_CALIBRATION_MODE) {
+    if (!Serial.available()) continue;
+    const char cmd = Serial.read();
+    if (cmd == '\n' || cmd == '\r' || cmd == ' ') continue;
+
+    if (cmd == 'x') break;
+    if (cmd == 'p') {
+      Serial.print("B="); Serial.print(cal.baseDeg);
+      Serial.print(" S="); Serial.print(cal.shoulderDeg);
+      Serial.print(" E="); Serial.println(cal.elbowDeg);
+      continue;
+    }
+
+    float v = Serial.parseFloat();
+    v = constrain(v, SERVO_MIN_DEG, SERVO_MAX_DEG);
+
+    if (cmd == 'b') cal.baseDeg = v;
+    if (cmd == 's') cal.shoulderDeg = v;
+    if (cmd == 'e') cal.elbowDeg = v;
+
+    writeServos(servoBase, servoShoulder, servoElbow, servoGripper, cal);
+  }
+
+
   ServoAngles start{};
   start.baseDeg     = BASE_ZERO_DEG;
   start.shoulderDeg = SHOULDER_ZERO_DEG;
@@ -195,14 +224,6 @@ void robotLoop() {
   }
 
   const ServoAngles targetAngles = mapToServos(result.q, targetGrip);
-  float speed = MAX_SPEED_DEG_PER_S;
-  float acc   = MAX_ACC_DEG_PER_S2;
-
-  if (trajMode) {
-    speed *= 0.6f;
-    acc   *= 0.6f;
-  }
-
-  const ServoAngles cur = motion.stepToward(targetAngles, dt, speed, acc);
+  const ServoAngles cur = motion.stepToward(targetAngles, dt, MAX_SPEED_DEG_PER_S, MAX_ACC_DEG_PER_S2);
   writeServos(servoBase, servoShoulder, servoElbow, servoGripper, cur);
 }
