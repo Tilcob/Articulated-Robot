@@ -2,7 +2,6 @@
 #include <math.h>
 #include "Types.h"
 
-
 namespace util {
 
 	inline float clampf(const float x, const float lo, const float hi) {
@@ -28,7 +27,7 @@ namespace util {
 	}
 
 	inline float mapRangeClamped(const int v, const int inMin, const int inMax, const float outMin, const float outMax) {
-		const float denom = static_cast<float>(inMax - inMin);
+		const auto denom = static_cast<float>(inMax - inMin);
 		if (fabsf(denom) < 1e-9f) return outMin;
 		float t = static_cast<float>(v - inMin) / denom;
 		t = clamp01(t);
